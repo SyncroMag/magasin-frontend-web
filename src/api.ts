@@ -1,12 +1,30 @@
 import type {
   Approval,
+  AccountingAccount,
+  AccountingEntry,
+  AccountingInventory,
+  AccountingSummary,
+  AdminNotification,
   Benefice,
   ChiffreAffaires,
+  AbsenceType,
+  Employe,
+  EmployeCreate,
+  EtatProduit,
+  EtatProduitCreate,
+  EtatProduitUpdate,
+  FactureUpload,
+  PaginatedEtatProduitResponse,
+  OutilMagasin,
+  OutilMagasinCreate,
   Produit,
   ProduitCreate,
   Role,
   TopProduit,
+  Transfert,
+  TransfertCreate,
   User,
+  UserUpdate,
   Vente,
   VenteCreate,
   VenteParJour,
@@ -25,6 +43,10 @@ async function parseResponse<T>(response: Response): Promise<T> {
   const data = text ? JSON.parse(text) : null
 
   if (!response.ok) {
+    if (response.status === 401) {
+      window.dispatchEvent(new Event('auth-expired'))
+    }
+
     const detail = data?.detail
     const message =
       typeof detail === 'string'
@@ -65,6 +87,11 @@ async function request<T>(
 export const api = {
   baseUrl: API_BASE_URL,
 
+  assetUrl(path: string) {
+    if (/^https?:\/\//i.test(path)) return path
+    return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
+  },
+
   async login(username: string, password: string): Promise<LoginResponse> {
     const form = new URLSearchParams()
     form.set('username', username)
@@ -90,6 +117,19 @@ export const api = {
     })
   },
 
+  updateProduit(token: string, id: number, produit: Partial<ProduitCreate>) {
+    return request<Produit | { detail: string }>(`/produits/${id}`, token, {
+      method: 'PUT',
+      body: JSON.stringify(produit),
+    })
+  },
+
+  deleteProduit(token: string, id: number) {
+    return request<{ message: string }>(`/produits/${id}`, token, {
+      method: 'DELETE',
+    })
+  },
+
   ventes(token: string) {
     return request<Vente[]>('/ventes/', token)
   },
@@ -98,6 +138,58 @@ export const api = {
     return request<Vente>('/ventes/', token, {
       method: 'POST',
       body: JSON.stringify(vente),
+    })
+  },
+
+  updateVente(token: string, id: number, vente: VenteCreate) {
+    return request<{ message: string }>(`/ventes/${id}`, token, {
+      method: 'PUT',
+      body: JSON.stringify(vente),
+    })
+  },
+
+  deleteVente(token: string, id: number) {
+    return request<{ message: string }>(`/ventes/${id}`, token, {
+      method: 'DELETE',
+    })
+  },
+
+  transferts(token: string) {
+    return request<Transfert[]>('/ventes/transferts', token)
+  },
+
+  createTransfert(token: string, transfert: TransfertCreate) {
+    return request<Transfert>('/ventes/transferts', token, {
+      method: 'POST',
+      body: JSON.stringify(transfert),
+    })
+  },
+
+  updateTransfertStatus(token: string, id: number, statut: 'NON_PAYE' | 'PAYE' | 'REFUSE') {
+    return request<Transfert | { message: string }>(`/ventes/transferts/${id}/status`, token, {
+      method: 'PATCH',
+      body: JSON.stringify({ statut }),
+    })
+  },
+
+  etatsProduits(token: string, showAll = false) {
+    return request<PaginatedEtatProduitResponse>(
+      `/etats-produits/?page_size=100&show_all=${showAll ? 'true' : 'false'}`,
+      token,
+    )
+  },
+
+  createEtatProduit(token: string, etat: EtatProduitCreate) {
+    return request<EtatProduit>('/etats-produits/', token, {
+      method: 'POST',
+      body: JSON.stringify(etat),
+    })
+  },
+
+  updateEtatProduit(token: string, id: number, etat: EtatProduitUpdate) {
+    return request<EtatProduit>(`/etats-produits/${id}`, token, {
+      method: 'PATCH',
+      body: JSON.stringify(etat),
     })
   },
 
@@ -112,8 +204,31 @@ export const api = {
     })
   },
 
+  updateUser(token: string, id: number, user: UserUpdate) {
+    return request<User>(`/users/${id}`, token, {
+      method: 'PUT',
+      body: JSON.stringify(user),
+    })
+  },
+
+  deleteUser(token: string, id: number) {
+    return request<{ message: string }>(`/users/${id}`, token, {
+      method: 'DELETE',
+    })
+  },
+
   approvals(token: string) {
     return request<Approval[]>('/approvals/', token)
+  },
+
+  adminNotifications(token: string) {
+    return request<AdminNotification[]>('/admin-notifications/', token)
+  },
+
+  markAdminNotificationRead(token: string, id: number) {
+    return request<AdminNotification>(`/admin-notifications/${id}/read`, token, {
+      method: 'PATCH',
+    })
   },
 
   reviewApproval(token: string, id: number, approve: boolean, comment?: string) {
@@ -141,5 +256,148 @@ export const api = {
 
   ventesParJour(token: string) {
     return request<VenteParJour[]>('/stats/ventes-par-jour', token)
+  },
+
+  outils(token: string) {
+    return request<OutilMagasin[]>('/outils/', token)
+  },
+
+  createOutil(token: string, outil: OutilMagasinCreate) {
+    return request<OutilMagasin>('/outils/', token, {
+      method: 'POST',
+      body: JSON.stringify(outil),
+    })
+  },
+
+  updateOutil(token: string, id: number, outil: OutilMagasinCreate) {
+    return request<{ message: string }>(`/outils/${id}`, token, {
+      method: 'PUT',
+      body: JSON.stringify(outil),
+    })
+  },
+
+  deleteOutil(token: string, id: number) {
+    return request<{ message: string }>(`/outils/${id}`, token, {
+      method: 'DELETE',
+    })
+  },
+
+  employes(token: string, month?: string) {
+    return request<Employe[]>(`/personnel/${month ? `?month=${month}` : ''}`, token)
+  },
+
+  createEmploye(token: string, employe: EmployeCreate) {
+    return request<Employe>('/personnel/', token, {
+      method: 'POST',
+      body: JSON.stringify(employe),
+    })
+  },
+
+  updateEmploye(token: string, id: number, employe: Partial<EmployeCreate>) {
+    return request<Employe>(`/personnel/${id}`, token, {
+      method: 'PUT',
+      body: JSON.stringify(employe),
+    })
+  },
+
+  deleteEmploye(token: string, id: number) {
+    return request<{ message: string }>(`/personnel/${id}`, token, {
+      method: 'DELETE',
+    })
+  },
+
+  createEmployeAbsence(
+    token: string,
+    employeId: number,
+    absence: { date_absence: string; type_absence: AbsenceType; commentaire?: string | null },
+  ) {
+    return request<{ id: number }>(`/personnel/${employeId}/absences`, token, {
+      method: 'POST',
+      body: JSON.stringify(absence),
+    })
+  },
+
+  deleteEmployeAbsence(token: string, absenceId: number) {
+    return request<{ message: string }>(`/personnel/absences/${absenceId}`, token, {
+      method: 'DELETE',
+    })
+  },
+
+  createEmployeAvance(
+    token: string,
+    employeId: number,
+    avance: { date_avance: string; montant: number; source_compte?: AccountingAccount; commentaire?: string | null },
+  ) {
+    return request<{ id: number }>(`/personnel/${employeId}/avances`, token, {
+      method: 'POST',
+      body: JSON.stringify(avance),
+    })
+  },
+
+  deleteEmployeAvance(token: string, avanceId: number) {
+    return request<{ message: string }>(`/personnel/avances/${avanceId}`, token, {
+      method: 'DELETE',
+    })
+  },
+
+  accountingSummary(token: string) {
+    return request<AccountingSummary>('/comptabilite/summary', token)
+  },
+
+  accountingEntries(token: string, account?: AccountingAccount) {
+    return request<AccountingEntry[]>(`/comptabilite/entries${account ? `?account=${account}` : ''}`, token)
+  },
+
+  accountingInventory(token: string, month: string) {
+    return request<AccountingInventory>(`/comptabilite/inventory?month=${encodeURIComponent(month)}`, token)
+  },
+
+  addAccountingManual(token: string, data: { account: AccountingAccount; amount: number; motif: string }) {
+    return request<AccountingEntry>('/comptabilite/manual', token, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  transferAccounting(
+    token: string,
+    data: { from_account: AccountingAccount; to_account: AccountingAccount; amount: number; motif: string },
+  ) {
+    return request<AccountingEntry[]>('/comptabilite/transfer', token, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  createExpense(token: string, data: { account: AccountingAccount; amount: number; motif: string }) {
+    return request<AccountingEntry>('/comptabilite/depenses', token, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  createSalaryPayment(
+    token: string,
+    data: { account: AccountingAccount; employe_id: number; amount: number; motif?: string | null },
+  ) {
+    return request<AccountingEntry>('/comptabilite/salary-payments', token, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  factures(token: string) {
+    return request<FactureUpload[]>('/factures/', token)
+  },
+
+  uploadFacture(token: string, data: { file: File; comment: string }) {
+    const form = new FormData()
+    form.set('file', data.file)
+    form.set('comment', data.comment)
+
+    return request<FactureUpload>('/factures/', token, {
+      method: 'POST',
+      body: form,
+    })
   },
 }

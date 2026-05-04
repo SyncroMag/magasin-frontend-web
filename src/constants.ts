@@ -1,6 +1,7 @@
 import type { ProduitCreate, Role } from './types'
 
 export const SESSION_KEY = 'gestion-magasin-session'
+export const STORE_NAME = 'magasin LEI'
 
 export const roleDetails: Record<
   Role,
@@ -37,4 +38,7 @@ export const emptyProduct: ProduitCreate = {
   prix_vente: 0,
   prix_plafond: 0,
   marge: 0,
+  commentaire: '',
+  is_partner: false,
+  partner_name: null,
 }

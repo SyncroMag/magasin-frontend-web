@@ -1,4 +1,5 @@
 import { Check, ClipboardCheck, X } from 'lucide-react'
+import { PaginationControls, usePaginatedItems } from '../common/PaginationControls'
 import { dateLabel } from '../../utils/format'
 import type { Approval } from '../../types'
 
@@ -15,6 +16,8 @@ export function ApprovalsPage({
   onCommentChange,
   onReview,
 }: ApprovalsPageProps) {
+  const { pageItems: paginatedApprovals, controls: approvalPagination } = usePaginatedItems(approvals)
+
   return (
     <article className="panel view-stack" id="approvals">
       <div className="panel-header">
@@ -25,7 +28,7 @@ export function ApprovalsPage({
         <ClipboardCheck size={20} aria-hidden="true" />
       </div>
       <div className="approval-list">
-        {approvals.map((approval) => (
+        {paginatedApprovals.map((approval) => (
           <div className="approval-row" key={approval.id}>
             <div>
               <strong>
@@ -37,11 +40,13 @@ export function ApprovalsPage({
               </span>
               <code>{JSON.stringify(approval.new_data ?? {})}</code>
             </div>
-            <input
-              placeholder="Commentaire"
-              value={reviewComments[approval.id] ?? ''}
-              onChange={(event) => onCommentChange(approval.id, event.target.value)}
-            />
+            <label>
+              Commentaire
+              <input
+                value={reviewComments[approval.id] ?? ''}
+                onChange={(event) => onCommentChange(approval.id, event.target.value)}
+              />
+            </label>
             <div className="row-actions">
               <button
                 type="button"
@@ -64,6 +69,7 @@ export function ApprovalsPage({
         ))}
         {approvals.length === 0 && <p className="muted">Aucune demande en attente.</p>}
       </div>
+      <PaginationControls {...approvalPagination} />
     </article>
   )
 }

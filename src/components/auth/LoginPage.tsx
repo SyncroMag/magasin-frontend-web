@@ -1,8 +1,10 @@
-import { Boxes, ChevronRight, Cloud, RefreshCw, ShieldCheck, ShoppingCart } from 'lucide-react'
+import { Boxes, ChevronRight, Cloud, Eye, EyeOff, RefreshCw, ShieldCheck, ShoppingCart } from 'lucide-react'
 import { useState } from 'react'
-import { api } from '../api'
+import { api } from '../../api'
+import { STORE_NAME } from '../../constants'
+import { notifyError, notifySuccess } from '../../utils/notifications'
 import type { FormEvent } from 'react'
-import type { Session } from '../types'
+import type { Session } from '../../types'
 
 type LoginPageProps = {
   onLogin: (session: Session) => void
@@ -11,16 +13,16 @@ type LoginPageProps = {
 export function LoginPage({ onLogin }: LoginPageProps) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [loginError, setLoginError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoggingIn, setIsLoggingIn] = useState(false)
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setIsLoggingIn(true)
-    setLoginError('')
 
     try {
       const response = await api.login(username, password)
+      notifySuccess('Connexion reussie.')
       onLogin({
         accessToken: response.access_token,
         tokenType: response.token_type,
@@ -28,7 +30,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         username,
       })
     } catch (err) {
-      setLoginError(err instanceof Error ? err.message : 'Connexion impossible')
+      notifyError(err instanceof Error ? err.message : 'Connexion impossible')
     } finally {
       setIsLoggingIn(false)
     }
@@ -42,7 +44,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <div className="brand-mark">
               <Boxes size={28} aria-hidden="true" />
             </div>
-            <p className="eyebrow">GestionMagasin</p>
+            <p className="eyebrow">{STORE_NAME}</p>
             <h1>Connexion magasin</h1>
             <p className="lead">Connectez-vous pour commencer.</p>
           </div>
@@ -72,8 +74,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <h2>Se connecter</h2>
           </div>
 
-          {loginError && <div className="message error">{loginError}</div>}
-
           <label>
             Nom utilisateur
             <input
@@ -86,13 +86,27 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
           <label>
             Mot de passe
-            <input
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              type="password"
-              autoComplete="current-password"
-              required
-            />
+            <span className="password-field">
+              <input
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+              />
+              <button
+                type="button"
+                aria-label={showPassword ? 'Masquer le mot de passe' : 'Voir le mot de passe'}
+                title={showPassword ? 'Masquer' : 'Voir'}
+                onClick={() => setShowPassword((value) => !value)}
+              >
+                {showPassword ? (
+                  <EyeOff size={18} aria-hidden="true" />
+                ) : (
+                  <Eye size={18} aria-hidden="true" />
+                )}
+              </button>
+            </span>
           </label>
 
           <button className="primary-button" disabled={isLoggingIn} type="submit">
