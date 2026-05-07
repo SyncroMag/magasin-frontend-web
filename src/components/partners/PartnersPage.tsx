@@ -4,7 +4,7 @@ import { api } from '../../api'
 import { FormattedNumberInput } from '../common/FormattedNumberInput'
 import { PaginationControls, usePaginatedItems } from '../common/PaginationControls'
 import { confirmAction, importantAlert, notifyError, notifySuccess } from '../../utils/notifications'
-import { money } from '../../utils/format'
+import { dateSearchValues, money } from '../../utils/format'
 import type { FormEvent } from 'react'
 import type { Produit, ProduitCreate } from '../../types'
 
@@ -65,7 +65,14 @@ export function PartnersPage({ produits, token, canManage, canDelete, onRefresh 
     if (!value) return partnerProducts
 
     return partnerProducts.filter((produit) =>
-      [produit.type, produit.categorie, produit.nom, produit.partner_name ?? ''].some((field) =>
+      [
+        produit.type,
+        produit.categorie,
+        produit.nom,
+        produit.partner_name ?? '',
+        ...dateSearchValues(produit.created_at),
+        ...dateSearchValues(produit.updated_at),
+      ].some((field) =>
         field.toLowerCase().includes(value),
       ),
     )
@@ -293,10 +300,12 @@ export function PartnersPage({ produits, token, canManage, canDelete, onRefresh 
             <input value={form.commentaire ?? ''} onChange={(event) => setForm({ ...form, commentaire: event.target.value })} />
           </label>
           <div className="row-actions">
-            <button className="primary-button" type="submit" disabled={!canManage}>
-              {editingProduct ? <Save size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />}
-              {editingProduct ? 'Enregistrer' : matchingProduct ? 'Mettre a jour' : 'Ajouter'}
-            </button>
+            {canManage && (
+              <button className="primary-button" type="submit">
+                {editingProduct ? <Save size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />}
+                {editingProduct ? 'Enregistrer' : matchingProduct ? 'Mettre a jour' : 'Ajouter'}
+              </button>
+            )}
             {editingProduct && (
               <button className="ghost-button" type="button" onClick={resetForm}>
                 <X size={18} aria-hidden="true" />
@@ -322,8 +331,8 @@ export function PartnersPage({ produits, token, canManage, canDelete, onRefresh 
           </div>
           <div className="row-actions">
             <Handshake size={20} aria-hidden="true" />
-            {!isFormOpen && (
-              <button className="primary-button compact-button" type="button" onClick={() => setFormOpen(true)} disabled={!canManage}>
+            {canManage && !isFormOpen && (
+              <button className="primary-button compact-button" type="button" onClick={() => setFormOpen(true)}>
                 <Plus size={18} aria-hidden="true" />
                 Ajouter
               </button>
@@ -349,7 +358,7 @@ export function PartnersPage({ produits, token, canManage, canDelete, onRefresh 
                 <th>Prix achat</th>
                 <th>Prix vente</th>
                 <th>Benefice</th>
-                <th>Actions</th>
+                {(canManage || canDelete) && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -366,27 +375,32 @@ export function PartnersPage({ produits, token, canManage, canDelete, onRefresh 
                   <td data-label="Prix achat">{money(produit.cout_achat)}</td>
                   <td data-label="Prix vente">{money(produit.prix_vente)}</td>
                   <td data-label="Benefice">{profitLabel(produit.cout_achat, produit.prix_vente)}</td>
-                  <td data-label="Actions">
-                    <div className="icon-actions">
-                      <button className="icon-button" type="button" title="Modifier" onClick={() => editProduct(produit)}>
-                        <Pencil size={16} aria-hidden="true" />
-                      </button>
-                      <button
-                        className="icon-button danger-icon"
-                        type="button"
-                        title="Supprimer"
-                        onClick={() => deleteProduct(produit)}
-                        disabled={!canDelete}
-                      >
-                        <Trash2 size={16} aria-hidden="true" />
-                      </button>
-                    </div>
-                  </td>
+                  {(canManage || canDelete) && (
+                    <td data-label="Actions">
+                      <div className="icon-actions">
+                        {canManage && (
+                          <button className="icon-button" type="button" title="Modifier" onClick={() => editProduct(produit)}>
+                            <Pencil size={16} aria-hidden="true" />
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            className="icon-button danger-icon"
+                            type="button"
+                            title="Supprimer"
+                            onClick={() => deleteProduct(produit)}
+                          >
+                            <Trash2 size={16} aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
               {filteredProducts.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="empty-cell">
+                  <td colSpan={(canManage || canDelete) ? 9 : 8} className="empty-cell">
                     Aucun article partenaire.
                   </td>
                 </tr>

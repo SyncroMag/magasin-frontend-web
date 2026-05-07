@@ -1,14 +1,15 @@
-import { Check, Pencil, Plus, Save, Search, Send, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Pencil, Plus, Save, Search, Send, Trash2, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api } from '../../api'
+import { emptyProduct } from '../../constants'
 import { FormattedNumberInput } from '../common/FormattedNumberInput'
 import { PaginationControls, usePaginatedItems } from '../common/PaginationControls'
-import { dateLabel, money } from '../../utils/format'
-import { notifyError, notifySuccess } from '../../utils/notifications'
+import { dateLabel, dateSearchValues, money } from '../../utils/format'
+import { confirmAction, notifyError, notifySuccess } from '../../utils/notifications'
 import type { FormEvent } from 'react'
 import type { ReactNode } from 'react'
-import type { EtatProduit, EtatProduitStatus, Produit, ProduitCreate } from '../../types'
+import type { Arrivage, EtatProduit, EtatProduitStatus, Produit, ProduitCreate } from '../../types'
 
 type StockSection = 'types' | 'categories' | 'stock' | 'arrivals' | 'states'
 
@@ -41,6 +42,17 @@ type GroupEditor = {
   kind: 'type' | 'category'
   label: string
   value: string
+}
+
+type ArrivalCartLine = {
+  id: string
+  form: ProduitCreate
+}
+
+type ArrivalEditor = {
+  id: number
+  date_arrivage: string
+  commentaire: string
 }
 
 export function StockPage({
@@ -77,12 +89,25 @@ export function StockPage({
   const [stateSearch, setStateSearch] = useState('')
   const [stateType, setStateType] = useState('')
   const [stateCategory, setStateCategory] = useState('')
+  const [isArrivalFormOpen, setArrivalFormOpen] = useState(false)
+  const [arrivalForm, setArrivalForm] = useState<ProduitCreate>(() => cloneProductForm(emptyProduct))
+  const [arrivalCart, setArrivalCart] = useState<ArrivalCartLine[]>([])
+  const [editingArrivalLineId, setEditingArrivalLineId] = useState<string | null>(null)
+  const [arrivalDate, setArrivalDate] = useState(todayValue())
+  const [arrivalComment, setArrivalComment] = useState('')
+  const [arrivalHistory, setArrivalHistory] = useState<Arrivage[]>([])
+  const [arrivalSearch, setArrivalSearch] = useState('')
+  const [expandedArrivalId, setExpandedArrivalId] = useState<number | null>(null)
+  const [arrivalEditor, setArrivalEditor] = useState<ArrivalEditor | null>(null)
+  const [isSubmittingArrival, setSubmittingArrival] = useState(false)
   const [stateForm, setStateForm] = useState({
     produit_id: '',
     quantite: 1,
     statut_retour: 'A_RETOURNER' as EtatProduitStatus,
     commentaire: '',
   })
+  const showStockActions = canManageStock || canDeleteStock
+  const showStateActions = canManageStock
 
   const typeOptions = useMemo(() => unique(produits.map((produit) => produit.type)), [produits])
   const categoryOptions = useMemo(
@@ -145,24 +170,6 @@ export function StockPage({
       }),
     [categoryOptions, produits],
   )
-  const arrivalRows = useMemo(() => {
-    const today = new Date()
-    const month = today.getMonth()
-    const year = today.getFullYear()
-
-    return produits
-      .filter((produit) => {
-        const reference = produit.updated_at ?? produit.created_at
-        if (!reference) return false
-        const date = new Date(reference)
-        return date.getMonth() === month && date.getFullYear() === year
-      })
-      .sort((a, b) => {
-        const left = new Date(b.updated_at ?? b.created_at ?? 0).getTime()
-        const right = new Date(a.updated_at ?? a.created_at ?? 0).getTime()
-        return left - right
-      })
-  }, [produits])
 
   const matchingProduct = produits.find(
     (produit) =>
@@ -190,6 +197,72 @@ export function StockPage({
       ),
     [produits, stateCategory, stateType],
   )
+  const arrivalCategoryOptions = useMemo(
+    () =>
+      unique(
+        produits
+          .filter((produit) => !arrivalForm.type || produit.type === arrivalForm.type)
+          .map((produit) => produit.categorie),
+      ),
+    [arrivalForm.type, produits],
+  )
+  const arrivalProductOptions = useMemo(
+    () =>
+      produits.filter(
+        (produit) =>
+          (!arrivalForm.type || produit.type === arrivalForm.type) &&
+          (!arrivalForm.categorie || produit.categorie === arrivalForm.categorie),
+      ),
+    [arrivalForm.categorie, arrivalForm.type, produits],
+  )
+  const matchingArrivalProduct = useMemo(
+    () =>
+      produits.find(
+        (produit) =>
+          matchesProductIdentity(produit, arrivalForm),
+      ),
+    [arrivalForm, produits],
+  )
+  const arrivalTotalQuantity = useMemo(
+    () => arrivalCart.reduce((total, line) => total + Number(line.form.quantite || 0), 0),
+    [arrivalCart],
+  )
+  const filteredArrivalHistory = useMemo(() => {
+    const value = arrivalSearch.trim().toLowerCase()
+    if (!value) return arrivalHistory
+
+    return arrivalHistory.filter((arrivage) =>
+      [
+        arrivage.commentaire ?? '',
+        ...dateSearchValues(arrivage.date_arrivage),
+        ...dateSearchValues(arrivage.created_at),
+        ...arrivage.lignes.flatMap((line) => [
+          line.nom,
+          line.type,
+          line.categorie,
+          line.partner_name ?? '',
+          String(line.quantite_ajoutee),
+          String(line.stock_avant),
+          String(line.stock_apres),
+          String(line.prix_vente),
+          money(line.prix_vente),
+        ]),
+      ].some((field) => field.toLowerCase().includes(value)),
+    )
+  }, [arrivalHistory, arrivalSearch])
+  const filteredArrivalValueTotal = useMemo(
+    () =>
+      filteredArrivalHistory.reduce(
+        (total, arrivage) =>
+          total +
+          arrivage.lignes.reduce(
+            (lineTotal, line) => lineTotal + Number(line.quantite_ajoutee) * Number(line.prix_vente),
+            0,
+          ),
+        0,
+      ),
+    [filteredArrivalHistory],
+  )
   const productsById = useMemo(() => new Map(produits.map((produit) => [produit.id, produit])), [produits])
   const filteredEtatsProduits = useMemo(() => {
     const value = stateSearch.trim().toLowerCase()
@@ -203,13 +276,16 @@ export function StockPage({
         produit?.categorie ?? '',
         etat.commentaire ?? '',
         stateLabel(etat.statut_retour),
+        ...dateSearchValues(etat.date_signalement),
+        ...dateSearchValues(etat.date_envoi),
+        ...dateSearchValues(etat.date_retour),
       ].some((field) => field.toLowerCase().includes(value))
     })
   }, [etatsProduits, productsById, stateSearch])
   const selectedStateProduct = productsById.get(Number(stateForm.produit_id))
   const { pageItems: paginatedTypeRows, controls: typePagination } = usePaginatedItems(typeRows)
   const { pageItems: paginatedCategoryRows, controls: categoryPagination } = usePaginatedItems(categoryRows)
-  const { pageItems: paginatedArrivalRows, controls: arrivalPagination } = usePaginatedItems(arrivalRows)
+  const { pageItems: paginatedArrivalHistory, controls: arrivalPagination } = usePaginatedItems(filteredArrivalHistory)
   const { pageItems: paginatedEtatsProduits, controls: statePagination } = usePaginatedItems(filteredEtatsProduits)
   const { pageItems: paginatedFilteredProducts, controls: productPagination } = usePaginatedItems(filteredProducts)
 
@@ -220,12 +296,28 @@ export function StockPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section, showAllStates])
 
+  useEffect(() => {
+    if (section !== 'arrivals') return
+    setExpandedArrivalId(null)
+    void loadArrivals()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section])
+
   async function loadEtatsProduits() {
     try {
       const result = await api.etatsProduits(token, showAllStates)
       setEtatsProduits(result.items)
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Chargement etat produit impossible')
+    }
+  }
+
+  async function loadArrivals() {
+    try {
+      const result = await api.arrivages(token)
+      setArrivalHistory(result)
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Chargement arrivages impossible')
     }
   }
 
@@ -287,6 +379,173 @@ export function StockPage({
     setStateFormOpen(false)
   }
 
+  function openArrivalForm() {
+    setArrivalFormOpen(true)
+    setArrivalForm(cloneProductForm(emptyProduct))
+    setArrivalCart([])
+    setEditingArrivalLineId(null)
+    setArrivalDate(todayValue())
+    setArrivalComment('')
+  }
+
+  function cancelArrivalForm() {
+    setArrivalFormOpen(false)
+    setArrivalForm(cloneProductForm(emptyProduct))
+    setArrivalCart([])
+    setEditingArrivalLineId(null)
+    setArrivalDate(todayValue())
+    setArrivalComment('')
+  }
+
+  function addOrUpdateArrivalLine() {
+    const normalized = normalizeProductForm(arrivalForm)
+
+    if (!normalized.type || !normalized.categorie || !normalized.nom) {
+      notifyError('Type, categorie et produit obligatoires.')
+      return
+    }
+
+    if (normalized.quantite <= 0) {
+      notifyError('Quantite a ajouter obligatoire.')
+      return
+    }
+
+    if (editingArrivalLineId) {
+      setArrivalCart((current) =>
+        current.map((line) =>
+          line.id === editingArrivalLineId
+            ? { ...line, form: normalized }
+            : line,
+        ),
+      )
+      setEditingArrivalLineId(null)
+    } else {
+      setArrivalCart((current) => [...current, { id: randomId(), form: normalized }])
+    }
+
+    setArrivalForm(cloneProductForm(emptyProduct))
+  }
+
+  function editArrivalLine(lineId: string) {
+    const line = arrivalCart.find((item) => item.id === lineId)
+    if (!line) return
+
+    setEditingArrivalLineId(line.id)
+    setArrivalForm(cloneProductForm(line.form))
+  }
+
+  function removeArrivalLine(lineId: string) {
+    if (editingArrivalLineId === lineId) {
+      setEditingArrivalLineId(null)
+      setArrivalForm(cloneProductForm(emptyProduct))
+    }
+    setArrivalCart((current) => current.filter((line) => line.id !== lineId))
+  }
+
+  async function submitArrival(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (arrivalCart.length === 0) {
+      notifyError('Ajoute au moins un produit dans le panier.')
+      return
+    }
+
+    if (!arrivalDate) {
+      notifyError('Date d arrivage obligatoire.')
+      return
+    }
+
+    setSubmittingArrival(true)
+    try {
+      await api.createArrivage(token, {
+        date_arrivage: arrivalDate,
+        commentaire: arrivalComment.trim() || null,
+        lignes: arrivalCart.map((line) => {
+          const payload = normalizeProductForm(line.form)
+          return {
+            type: payload.type,
+            categorie: payload.categorie,
+            nom: payload.nom,
+            quantite: payload.quantite,
+            seuil_alerte: payload.seuil_alerte,
+            cout_achat: payload.cout_achat,
+            prix_vente: payload.prix_vente,
+            prix_plafond: payload.prix_plafond,
+            marge: payload.marge,
+            commentaire: payload.commentaire || null,
+            is_partner: payload.is_partner,
+            partner_name: payload.partner_name ?? null,
+          }
+        }),
+      })
+
+      notifySuccess('Arrivage enregistre.')
+      cancelArrivalForm()
+      await loadArrivals()
+      await onRefresh()
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Enregistrement arrivage impossible')
+      await onRefresh()
+    } finally {
+      setSubmittingArrival(false)
+    }
+  }
+
+  function toggleArrivalRow(arrivageId: number) {
+    setExpandedArrivalId((current) => (current === arrivageId ? null : arrivageId))
+  }
+
+  function openArrivalEditor(arrivage: Arrivage) {
+    setArrivalEditor({
+      id: arrivage.id,
+      date_arrivage: arrivage.date_arrivage?.slice(0, 10) ?? todayValue(),
+      commentaire: arrivage.commentaire ?? '',
+    })
+  }
+
+  async function saveArrivalEditor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!arrivalEditor) return
+
+    if (!arrivalEditor.date_arrivage) {
+      notifyError('Date d arrivage obligatoire.')
+      return
+    }
+
+    try {
+      await api.updateArrivage(token, arrivalEditor.id, {
+        date_arrivage: arrivalEditor.date_arrivage,
+        commentaire: arrivalEditor.commentaire.trim() || null,
+      })
+      notifySuccess('Arrivage modifie.')
+      setArrivalEditor(null)
+      await loadArrivals()
+      await onRefresh()
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Modification arrivage impossible')
+    }
+  }
+
+  async function deleteArrival(arrivageId: number) {
+    const confirmed = await confirmAction(
+      'Supprimer cet arrivage ?',
+      'Le stock ajoute par cet arrivage sera retire.',
+    )
+    if (!confirmed) return
+
+    try {
+      await api.deleteArrivage(token, arrivageId)
+      notifySuccess('Arrivage supprime.')
+      if (expandedArrivalId === arrivageId) {
+        setExpandedArrivalId(null)
+      }
+      await loadArrivals()
+      await onRefresh()
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Suppression arrivage impossible')
+    }
+  }
+
   function openEditProduct(produit: Produit) {
     setEditingProduct(produit)
     setEditForm({
@@ -341,7 +600,7 @@ export function StockPage({
                 <th>Type</th>
                 <th>Categories</th>
                 <th>Produits</th>
-                <th>Actions</th>
+                {showStockActions && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -352,16 +611,19 @@ export function StockPage({
                   </td>
                   <td data-label="Categories">{row.categoryCount}</td>
                   <td data-label="Produits">{row.productCount}</td>
-                  <td data-label="Actions">
-                    <IconActions
-                      canDelete={canDeleteStock}
-                      onEdit={() => setGroupEditor({ kind: 'type', label: row.type, value: row.type })}
-                      onDelete={() => onDeleteType(row.type)}
-                    />
-                  </td>
+                  {showStockActions && (
+                    <td data-label="Actions">
+                      <IconActions
+                        canEdit={canManageStock}
+                        canDelete={canDeleteStock}
+                        onEdit={() => setGroupEditor({ kind: 'type', label: row.type, value: row.type })}
+                        onDelete={() => onDeleteType(row.type)}
+                      />
+                    </td>
+                  )}
                 </tr>
               ))}
-              {typeRows.length === 0 && <EmptyRow colSpan={4} />}
+              {typeRows.length === 0 && <EmptyRow colSpan={showStockActions ? 4 : 3} />}
             </tbody>
           </table>
         </div>
@@ -387,7 +649,7 @@ export function StockPage({
                 <th>Categorie</th>
                 <th>Types</th>
                 <th>Produits</th>
-                <th>Actions</th>
+                {showStockActions && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -398,22 +660,25 @@ export function StockPage({
                   </td>
                   <td data-label="Types">{row.typeCount}</td>
                   <td data-label="Produits">{row.productCount}</td>
-                  <td data-label="Actions">
-                    <IconActions
-                      canDelete={canDeleteStock}
-                      onEdit={() =>
-                        setGroupEditor({
-                          kind: 'category',
-                          label: row.categorie,
-                          value: row.categorie,
-                        })
-                      }
-                      onDelete={() => onDeleteCategory(row.categorie)}
-                    />
-                  </td>
+                  {showStockActions && (
+                    <td data-label="Actions">
+                      <IconActions
+                        canEdit={canManageStock}
+                        canDelete={canDeleteStock}
+                        onEdit={() =>
+                          setGroupEditor({
+                            kind: 'category',
+                            label: row.categorie,
+                            value: row.categorie,
+                          })
+                        }
+                        onDelete={() => onDeleteCategory(row.categorie)}
+                      />
+                    </td>
+                  )}
                 </tr>
               ))}
-              {categoryRows.length === 0 && <EmptyRow colSpan={4} />}
+              {categoryRows.length === 0 && <EmptyRow colSpan={showStockActions ? 4 : 3} />}
             </tbody>
           </table>
         </div>
@@ -440,14 +705,14 @@ export function StockPage({
                 />
                 Voir tout
               </label>
-              {canManageStock && (
+              {canManageStock && !isStateFormOpen && (
                 <button
-                  className={isStateFormOpen ? 'ghost-button compact-button' : 'primary-button compact-button'}
+                  className="primary-button compact-button"
                   type="button"
-                  onClick={() => setStateFormOpen((current) => !current)}
+                  onClick={() => setStateFormOpen(true)}
                 >
                   <Plus size={18} aria-hidden="true" />
-                  {isStateFormOpen ? 'Fermer ajout' : 'Ajouter un etat'}
+                  Ajouter un etat
                 </button>
               )}
             </div>
@@ -566,7 +831,7 @@ export function StockPage({
                 <th>Statut</th>
                 <th>Dates</th>
                 <th>Commentaire</th>
-                <th>Actions</th>
+                {showStateActions && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -591,30 +856,32 @@ export function StockPage({
                       <span>Retour: {dateLabel(etat.date_retour)}</span>
                     </td>
                     <td data-label="Commentaire">{etat.commentaire || '-'}</td>
-                    <td data-label="Actions">
-                      <div className="icon-actions">
-                        <button
-                          type="button"
-                          className="icon-button"
-                          title="Envoyer fournisseur"
-                          onClick={() => updateEtatProduit(etat, 'ENVOYE_FOURNISSEUR')}
-                        >
-                          <Send size={16} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          title="Retour reintegre"
-                          onClick={() => updateEtatProduit(etat, 'RETOUR_REINTEGRE')}
-                        >
-                          <Check size={16} aria-hidden="true" />
-                        </button>
-                      </div>
-                    </td>
+                    {showStateActions && (
+                      <td data-label="Actions">
+                        <div className="icon-actions">
+                          <button
+                            type="button"
+                            className="icon-button"
+                            title="Envoyer fournisseur"
+                            onClick={() => updateEtatProduit(etat, 'ENVOYE_FOURNISSEUR')}
+                          >
+                            <Send size={16} aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-button"
+                            title="Retour reintegre"
+                            onClick={() => updateEtatProduit(etat, 'RETOUR_REINTEGRE')}
+                          >
+                            <Check size={16} aria-hidden="true" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 )
               })}
-              {filteredEtatsProduits.length === 0 && <EmptyRow colSpan={8} />}
+              {filteredEtatsProduits.length === 0 && <EmptyRow colSpan={showStateActions ? 8 : 7} />}
             </tbody>
           </table>
         </div>
@@ -626,54 +893,220 @@ export function StockPage({
   if (section === 'arrivals') {
     return (
       <article className="panel view-stack">
-        <DataHeader eyebrow="Article" title="Arrivage du mois" action={canManageStock ? <AddButton onClick={() => setProductModalOpen(true)} /> : null} />
+        <DataHeader
+          eyebrow="Article"
+          title="Arrivage"
+          action={canManageStock && !isArrivalFormOpen ? <AddButton onClick={openArrivalForm} /> : null}
+        />
+
+        {canManageStock && isArrivalFormOpen && (
+          <section className="module-grid">
+            <article className="panel module-side">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">Arrivage</p>
+                  <h2>{editingArrivalLineId ? 'Modifier ligne' : 'Ajouter produit'}</h2>
+                </div>
+              </div>
+              <div className="compact-form">
+                <ProductFields
+                  form={arrivalForm}
+                  typeOptions={typeOptions}
+                  categoryOptions={arrivalCategoryOptions}
+                  productOptions={arrivalProductOptions}
+                  availableQuantity={matchingArrivalProduct?.quantite ?? 0}
+                  onChange={setArrivalForm}
+                  mode="stock"
+                />
+                <button className="ghost-button" type="button" onClick={addOrUpdateArrivalLine}>
+                  <Plus size={16} aria-hidden="true" />
+                  {editingArrivalLineId ? 'Modifier ligne' : 'Ajouter au panier'}
+                </button>
+              </div>
+            </article>
+
+            <article className="panel module-main">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">Panier</p>
+                  <h2>Produits a ajouter</h2>
+                </div>
+              </div>
+              <form className="compact-form sales-summary-form" onSubmit={submitArrival}>
+                <div className="sales-summary-fields">
+                  <label>
+                    Date d arrivage
+                    <input
+                      type="date"
+                      value={arrivalDate}
+                      onChange={(event) => setArrivalDate(event.target.value)}
+                      required
+                    />
+                  </label><br></br>
+                  <label>
+                    Quantite totale
+                    <input value={arrivalTotalQuantity} readOnly />
+                  </label>
+                </div>
+                <label>
+                  Commentaire
+                  <input
+                    value={arrivalComment}
+                    onChange={(event) => setArrivalComment(event.target.value)}
+                    placeholder="Commentaire global de l arrivage"
+                  />
+                </label>
+
+                <div className="ticket-lines">
+                  {arrivalCart.map((line) => (
+                    <div className="ticket-line" key={line.id}>
+                      <span>
+                        {line.form.nom} ({line.form.type} / {line.form.categorie}) x {line.form.quantite}
+                      </span>
+                      <strong>{money(line.form.prix_vente)}</strong>
+                      <div className="icon-actions">
+                        <button type="button" className="icon-button" title="Modifier" onClick={() => editArrivalLine(line.id)}>
+                          <Pencil size={14} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-button danger-icon"
+                          title="Supprimer"
+                          onClick={() => removeArrivalLine(line.id)}
+                        >
+                          <Trash2 size={14} aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {arrivalCart.length === 0 && <p className="muted">Panier vide.</p>}
+                </div>
+
+                <div className="sales-summary-actions">
+                  <button className="primary-button" type="submit" disabled={isSubmittingArrival || arrivalCart.length === 0}>
+                    <Save size={18} aria-hidden="true" />
+                    Enregistrer l arrivage
+                  </button>
+                  <button className="ghost-button" type="button" onClick={cancelArrivalForm}>
+                    <X size={16} aria-hidden="true" />
+                    Annuler
+                  </button>
+                </div>
+              </form>
+            </article>
+          </section>
+        )}
+
+        <div className="panel-actions">
+          <label>
+            Recherche
+            <span className="search-field">
+              <Search size={18} aria-hidden="true" />
+              <input
+                value={arrivalSearch}
+                onChange={(event) => setArrivalSearch(event.target.value)}
+                placeholder="Date, commentaire, produit, type..."
+              />
+            </span>
+          </label>
+          {/* <span className="pill info">Valeur totale: {money(filteredArrivalValueTotal)}</span> */}
+        </div>
+
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Produit</th>
-                <th>Type</th>
-                <th>Categorie</th>
-                <th>Stock</th>
-                <th>Prix vente</th>
-                <th>Mise a jour</th>
-                <th>Statut</th>
-                <th>Actions</th>
+                <th>Date arrivage</th>
+                <th>Commentaire</th>
+                <th>Lignes</th>
+                <th>Quantite totale</th>
+                <th>Valeur</th>
+                <th>Enregistre le</th>
+                <th>Details</th>
+                {canDeleteStock && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {paginatedArrivalRows.map((produit) => (
-                <tr key={produit.id}>
-                  <td data-label="Produit">
-                    <strong>{produit.nom}</strong>
-                    <span>{produit.commentaire || 'Sans commentaire'}</span>
-                  </td>
-                  <td data-label="Type">{produit.type}</td>
-                  <td data-label="Categorie">{produit.categorie}</td>
-                  <td data-label="Stock">{produit.quantite}</td>
-                  <td data-label="Prix vente">{money(produit.prix_vente)}</td>
-                  <td data-label="Mise a jour">{dateLabel(produit.updated_at ?? produit.created_at)}</td>
-                  <td data-label="Statut">
-                    <span className={produit.updated_at ? 'pill info' : 'pill ok'}>
-                      {produit.updated_at ? 'Modifie ce mois' : 'Ajoute ce mois'}
-                    </span>
-                  </td>
-                  <td data-label="Actions">
-                    <IconActions
-                      canDelete={canDeleteStock}
-                      onEdit={() => openEditProduct(produit)}
-                      onDelete={() => onDeleteProduct(produit.id)}
-                    />
-                  </td>
-                </tr>
-              ))}
-              {arrivalRows.length === 0 && <EmptyRow colSpan={8} />}
+              {paginatedArrivalHistory.map((arrivage) => {
+                const isExpanded = expandedArrivalId === arrivage.id
+                const arrivalValue = arrivage.lignes.reduce(
+                  (total, line) => total + Number(line.quantite_ajoutee) * Number(line.prix_vente),
+                  0,
+                )
+
+                return (
+                  <Fragment key={arrivage.id}>
+                    <tr
+                      className={`clickable-row${isExpanded ? ' selected-row' : ''}`}
+                      onClick={() => toggleArrivalRow(arrivage.id)}
+                    >
+                      <td data-label="Date arrivage">{dateLabel(arrivage.date_arrivage)}</td>
+                      <td data-label="Commentaire">{arrivage.commentaire || '-'}</td>
+                      <td data-label="Lignes">{arrivage.total_lignes}</td>
+                      <td data-label="Quantite totale">{arrivage.total_quantite}</td>
+                      <td data-label="Valeur">{money(arrivalValue)}</td>
+                      <td data-label="Enregistre le">{dateLabel(arrivage.created_at)}</td>
+                      <td data-label="Details">
+                        {isExpanded ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+                      </td>
+                      {canDeleteStock && (
+                        <td data-label="Actions">
+                          <div className="icon-actions">
+                            <button
+                              type="button"
+                              className="icon-button"
+                              title="Modifier"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openArrivalEditor(arrivage)
+                              }}
+                            >
+                              <Pencil size={16} aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-button danger-icon"
+                              title="Supprimer"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void deleteArrival(arrivage.id)
+                              }}
+                            >
+                              <Trash2 size={16} aria-hidden="true" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                    {isExpanded && (
+                      <tr className="expanded-row">
+                        <td colSpan={canDeleteStock ? 8 : 7} className="expanded-sale-cell">
+                          <div className="ticket-lines">
+                            {arrivage.lignes.map((line, index) => (
+                              <div className="ticket-line" key={`${arrivage.id}-${line.nom}-${index}`}>
+                                <span>
+                                  {line.nom} ({line.type} / {line.categorie}) x {line.quantite_ajoutee}
+                                  {line.is_partner ? ` - partenaire ${line.partner_name || ''}` : ''}
+                                  {` - stock ${line.stock_avant} -> ${line.stock_apres}`}
+                                </span>
+                                <strong>
+                                  PA {money(line.cout_achat)} | Total {money(Number(line.quantite_ajoutee) * Number(line.prix_vente))}
+                                </strong>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+              {filteredArrivalHistory.length === 0 && <EmptyRow colSpan={canDeleteStock ? 8 : 7} />}
             </tbody>
           </table>
         </div>
         <PaginationControls {...arrivalPagination} />
-        {renderProductModal()}
-        {renderEditProductModal()}
+        {renderArrivalEditModal()}
       </article>
     )
   }
@@ -747,7 +1180,7 @@ export function StockPage({
               <th>Partenaire</th>
               <th>Date update</th>
               <th>Etat</th>
-              <th>Actions</th>
+              {showStockActions && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -776,16 +1209,19 @@ export function StockPage({
                     {produit.quantite <= produit.seuil_alerte ? 'Alerte' : 'OK'}
                   </span>
                 </td>
-                <td data-label="Actions">
-                  <IconActions
-                    canDelete={canDeleteStock}
-                    onEdit={() => openEditProduct(produit)}
-                    onDelete={() => onDeleteProduct(produit.id)}
-                  />
-                </td>
+                {showStockActions && (
+                  <td data-label="Actions">
+                    <IconActions
+                      canEdit={canManageStock}
+                      canDelete={canDeleteStock}
+                      onEdit={() => openEditProduct(produit)}
+                      onDelete={() => onDeleteProduct(produit.id)}
+                    />
+                  </td>
+                )}
               </tr>
             ))}
-            {filteredProducts.length === 0 && <EmptyRow colSpan={11} />}
+            {filteredProducts.length === 0 && <EmptyRow colSpan={showStockActions ? 11 : 10} />}
           </tbody>
         </table>
       </div>
@@ -849,6 +1285,48 @@ export function StockPage({
             onChange={setEditForm}
             mode="edit"
           />
+          <button className="primary-button" type="submit">
+            <Save size={18} aria-hidden="true" />
+            Enregistrer
+          </button>
+        </form>
+      </Modal>
+    )
+  }
+
+  function renderArrivalEditModal() {
+    if (!arrivalEditor) return null
+
+    return (
+      <Modal
+        title={`Modifier arrivage #${arrivalEditor.id}`}
+        onClose={() => setArrivalEditor(null)}
+      >
+        <form className="modal-form" onSubmit={saveArrivalEditor}>
+          <label>
+            Date d arrivage
+            <input
+              type="date"
+              value={arrivalEditor.date_arrivage}
+              onChange={(event) =>
+                setArrivalEditor((current) =>
+                  current ? { ...current, date_arrivage: event.target.value } : current,
+                )
+              }
+              required
+            />
+          </label>
+          <label>
+            Commentaire
+            <input
+              value={arrivalEditor.commentaire}
+              onChange={(event) =>
+                setArrivalEditor((current) =>
+                  current ? { ...current, commentaire: event.target.value } : current,
+                )
+              }
+            />
+          </label>
           <button className="primary-button" type="submit">
             <Save size={18} aria-hidden="true" />
             Enregistrer
@@ -1061,6 +1539,7 @@ function ProductFields({
             min={0}
             onValueChange={(prix_plafond) => onChange({ ...form, prix_plafond })}
           />
+          <span className="profit-note">{profitLabel(form.cout_achat, form.prix_plafond)}</span>
         </label>
         <label>
           Seuil alerte
@@ -1114,29 +1593,34 @@ function AddButton({ onClick }: { onClick: () => void }) {
 }
 
 function IconActions({
+  canEdit,
   canDelete,
   onEdit,
   onDelete,
 }: {
+  canEdit: boolean
   canDelete: boolean
   onEdit: () => void
   onDelete: () => void
 }) {
   return (
     <div className="icon-actions">
-      <button type="button" className="icon-button" title="Modifier" aria-label="Modifier" onClick={onEdit}>
-        <Pencil size={16} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        className="icon-button danger-icon"
-        title="Supprimer"
-        aria-label="Supprimer"
-        onClick={onDelete}
-        disabled={!canDelete}
-      >
-        <Trash2 size={16} aria-hidden="true" />
-      </button>
+      {canEdit && (
+        <button type="button" className="icon-button" title="Modifier" aria-label="Modifier" onClick={onEdit}>
+          <Pencil size={16} aria-hidden="true" />
+        </button>
+      )}
+      {canDelete && (
+        <button
+          type="button"
+          className="icon-button danger-icon"
+          title="Supprimer"
+          aria-label="Supprimer"
+          onClick={onDelete}
+        >
+          <Trash2 size={16} aria-hidden="true" />
+        </button>
+      )}
     </div>
   )
 }
@@ -1199,4 +1683,53 @@ function stateLabel(value?: string | null) {
   if (value === 'RETOUR_REINTEGRE') return 'Retour, revendable'
   if (value === 'REGLE') return 'Regle'
   return 'A retourner'
+}
+
+function cloneProductForm(value: ProduitCreate): ProduitCreate {
+  return {
+    ...value,
+    commentaire: value.commentaire ?? '',
+    partner_name: value.partner_name ?? null,
+  }
+}
+
+function normalizeProductForm(value: ProduitCreate): ProduitCreate {
+  const type = value.type.trim()
+  const categorie = value.categorie.trim()
+  const nom = value.nom.trim()
+  const cout_achat = Number(value.cout_achat) || 0
+  const prix_vente = Number(value.prix_vente) || 0
+  const is_partner = Boolean(value.is_partner)
+
+  return {
+    ...value,
+    type,
+    categorie,
+    nom,
+    quantite: Math.max(0, Number(value.quantite) || 0),
+    seuil_alerte: Math.max(0, Number(value.seuil_alerte) || 0),
+    cout_achat,
+    prix_vente,
+    prix_plafond: Math.max(0, Number(value.prix_plafond) || 0),
+    marge: profitPercent(cout_achat, prix_vente),
+    commentaire: value.commentaire?.trim() ?? '',
+    is_partner,
+    partner_name: is_partner ? (value.partner_name?.trim() || null) : null,
+  }
+}
+
+function matchesProductIdentity(produit: Produit, form: ProduitCreate) {
+  return (
+    produit.nom.trim().toLowerCase() === form.nom.trim().toLowerCase() &&
+    produit.type.trim().toLowerCase() === form.type.trim().toLowerCase() &&
+    produit.categorie.trim().toLowerCase() === form.categorie.trim().toLowerCase() &&
+    Boolean(produit.is_partner) === Boolean(form.is_partner)
+  )
+}
+
+function randomId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }

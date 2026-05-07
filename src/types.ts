@@ -86,6 +86,61 @@ export type TransfertCreate = {
   commentaire?: string | null
 }
 
+export type ArrivageLineCreate = {
+  type: string
+  categorie: string
+  nom: string
+  quantite: number
+  seuil_alerte: number
+  cout_achat: number
+  prix_vente: number
+  prix_plafond: number
+  marge: number
+  commentaire?: string | null
+  is_partner: boolean
+  partner_name?: string | null
+}
+
+export type ArrivageCreate = {
+  date_arrivage: string
+  commentaire?: string | null
+  lignes: ArrivageLineCreate[]
+}
+
+export type ArrivageUpdate = {
+  date_arrivage?: string
+  commentaire?: string | null
+}
+
+export type ArrivageDetail = {
+  produit_id: number
+  type: string
+  categorie: string
+  nom: string
+  quantite_ajoutee: number
+  stock_avant: number
+  stock_apres: number
+  seuil_alerte: number
+  cout_achat: number
+  prix_vente: number
+  prix_plafond: number
+  marge: number
+  commentaire?: string | null
+  is_partner: boolean
+  partner_name?: string | null
+}
+
+export type Arrivage = {
+  id: number
+  date_arrivage: string
+  commentaire?: string | null
+  created_by: number
+  created_at: string
+  total_lignes: number
+  total_quantite: number
+  lignes: ArrivageDetail[]
+}
+
 export type User = {
   id: number
   username: string

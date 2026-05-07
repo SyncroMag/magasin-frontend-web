@@ -1,7 +1,7 @@
 import { Bell, Check, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { PaginationControls, usePaginatedItems } from '../common/PaginationControls'
-import { dateLabel, money } from '../../utils/format'
+import { dateLabel, dateSearchValues, money } from '../../utils/format'
 import type { AdminNotification } from '../../types'
 
 type AdminNotificationsPageProps = {
@@ -28,6 +28,7 @@ export function AdminNotificationsPage({
         String(data.type ?? ''),
         String(data.categorie ?? ''),
         String(data.point_vente ?? ''),
+        ...dateSearchValues(notification.created_at),
       ].some((field) => field.toLowerCase().includes(value))
     })
   }, [notifications, query])

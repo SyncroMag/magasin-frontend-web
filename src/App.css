@@ -705,6 +705,24 @@ button:disabled {
   overflow-x: auto;
 }
 
+.table-wrap.no-x-scroll {
+  overflow-x: hidden;
+}
+
+.transfer-history-table {
+  table-layout: fixed;
+}
+
+.transfer-history-table th,
+.transfer-history-table td {
+  overflow-wrap: anywhere;
+}
+
+.transfer-history-search {
+  width: min(420px, 100%);
+  margin-top: 14px;
+}
+
 .dashboard-table-wrap {
   padding: 8px 2px 2px;
 }
@@ -733,6 +751,15 @@ button:disabled {
 .pagination-controls select {
   min-height: 32px;
   padding: 0 28px 0 10px;
+}
+
+.table-pagination-cell {
+  padding: 0 12px 12px;
+  background: #fff;
+}
+
+.table-pagination-cell .pagination-controls {
+  margin-top: 0;
 }
 
 .pagination-buttons {
@@ -1123,6 +1150,171 @@ td span {
 .external-form-panel label {
   gap: 5px;
   font-size: 13px;
+}
+
+.transfer-form-panel {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: start;
+  overflow-x: hidden;
+}
+
+.transfer-add-card {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.transfer-add-card .transfer-form-panel {
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.transfer-form-panel label.transfer-type-field {
+  grid-column: 1 / span 2;
+}
+
+.transfer-form-panel label.transfer-category-field {
+  grid-column: 3 / span 2;
+}
+
+.transfer-form-panel label.transfer-product-field {
+  grid-column: 5 / -1;
+}
+
+.transfer-form-panel label.transfer-quantity-field {
+  grid-column: 1 / span 3;
+}
+
+.transfer-form-panel label.transfer-ceiling-price-field {
+  grid-column: 4 / span 4;
+}
+
+.transfer-form-panel label.transfer-price-field {
+  grid-column: 8 / span 4;
+}
+
+.transfer-form-panel .filter-actions,
+.transfer-total-chip {
+  min-width: 0;
+}
+
+.transfer-total-chip {
+  grid-column: 1 / span 4;
+}
+
+.transfer-form-panel .transfer-actions {
+  grid-column: 5 / span 3;
+  align-self: stretch;
+  justify-content: stretch;
+}
+
+.transfer-actions button {
+  width: 100%;
+  min-width: 0;
+  min-height: 50px;
+  padding-inline: 18px;
+  white-space: nowrap;
+}
+
+.transfer-quantity-field .profit-note {
+  display: block;
+  min-height: 14px;
+  margin-top: -2px;
+  color: var(--green);
+  font-size: 12px;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.transfer-ceiling-price-field input {
+  color: var(--muted);
+  background: #f7f8f6;
+}
+
+.transfer-lines-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.transfer-lines-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.transfer-lines-header .eyebrow {
+  margin-bottom: 3px;
+}
+
+.transfer-lines-header h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 16px;
+}
+
+.transfer-lines-header strong {
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.transfer-ticket-lines {
+  gap: 4px;
+}
+
+.transfer-submit-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 8px;
+  justify-content: end;
+}
+
+.transfer-confirm-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.85fr) minmax(260px, 1fr) minmax(260px, auto);
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.transfer-confirm-panel .transfer-submit-row {
+  min-width: 260px;
+}
+
+.transfer-confirm-panel .transfer-submit-row button {
+  width: 100%;
+}
+
+.transfer-total-chip {
+  display: grid;
+  gap: 4px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.transfer-total-chip span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.transfer-total-chip strong {
+  color: var(--text-strong);
+  font-size: 14px;
 }
 
 .expanded-content {
@@ -1733,6 +1925,31 @@ button:disabled svg {
   .external-form-panel,
   .expanded-content,
   .sale-expanded-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .external-form-panel label:nth-last-of-type(1),
+  .external-form-panel .filter-actions,
+  .transfer-type-field,
+  .transfer-category-field,
+  .transfer-product-field,
+  .transfer-destination-field,
+  .transfer-quantity-field,
+  .transfer-ceiling-price-field,
+  .transfer-price-field,
+  .transfer-comment-field,
+  .transfer-total-chip,
+  .transfer-lines-panel {
+    grid-column: 1 / -1;
+  }
+
+  .transfer-lines-header,
+  .transfer-submit-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .transfer-confirm-panel {
     grid-template-columns: 1fr;
   }
 

@@ -3,6 +3,15 @@ import { useEffect, useMemo, useState } from 'react'
 
 type PageSize = 5 | 10 | 'all'
 
+type PaginationControlsProps = {
+  page: number
+  pageSize: PageSize
+  total: number
+  totalPages: number
+  setPage: (page: number) => void
+  setPageSize: (pageSize: PageSize) => void
+}
+
 export function usePaginatedItems<T>(items: T[], initialPageSize: PageSize = 5) {
   const [pageSize, setPageSize] = useState<PageSize>(initialPageSize)
   const [page, setPage] = useState(1)
@@ -39,14 +48,7 @@ export function PaginationControls({
   totalPages,
   setPage,
   setPageSize,
-}: {
-  page: number
-  pageSize: PageSize
-  total: number
-  totalPages: number
-  setPage: (page: number) => void
-  setPageSize: (pageSize: PageSize) => void
-}) {
+}: PaginationControlsProps) {
   if (total <= 5) return null
 
   return (
@@ -86,5 +88,24 @@ export function PaginationControls({
         </button>
       </div>
     </div>
+  )
+}
+
+export function TablePaginationFooter({
+  colSpan,
+  ...controls
+}: PaginationControlsProps & {
+  colSpan: number
+}) {
+  if (controls.total <= 5) return null
+
+  return (
+    <tfoot>
+      <tr>
+        <td colSpan={colSpan} className="table-pagination-cell">
+          <PaginationControls {...controls} />
+        </td>
+      </tr>
+    </tfoot>
   )
 }

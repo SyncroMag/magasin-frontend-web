@@ -1,6 +1,6 @@
 import { AlertTriangle, BadgeCheck, BarChart3, ChevronDown, ChevronUp } from 'lucide-react'
 import { Fragment, useMemo, useState } from 'react'
-import { PaginationControls, usePaginatedItems } from '../common/PaginationControls'
+import { TablePaginationFooter, usePaginatedItems } from '../common/PaginationControls'
 import { roleDetails } from '../../constants'
 import { dateLabel, money } from '../../utils/format'
 import type { Benefice, ChiffreAffaires, Produit, Session, TopProduit, Vente, VenteParJour } from '../../types'
@@ -10,6 +10,7 @@ type OverviewPageProps = {
   chiffreAffaires: ChiffreAffaires | null
   benefice: Benefice | null
   lowStockProducts: Produit[]
+  produits: Produit[]
   ventes: Vente[]
   topProduits: TopProduit[]
   ventesParJour: VenteParJour[]
@@ -20,6 +21,7 @@ export function OverviewPage({
   chiffreAffaires,
   benefice,
   lowStockProducts,
+  produits,
   ventes,
   topProduits,
   ventesParJour,
@@ -43,6 +45,8 @@ export function OverviewPage({
   const grossSales = netSales + totalReduction
   const averageTicket = ventes.length > 0 ? netSales / ventes.length : 0
   const profitRate = netSales > 0 ? (totalProfit / netSales) * 100 : 0
+  const canViewFinancialStats = session.role !== 'VENDEUR'
+
   return (
     <div className="view-stack">
       <section className="role-band">
@@ -53,33 +57,30 @@ export function OverviewPage({
         </div>
       </section>
 
-      <section className="metric-grid overview-metric-grid">
-        <article className="metric-card accent-cyan">
-          <span>Chiffre d affaire brut</span>
-          <strong>{money(grossSales)}</strong>
-          <small>Avant reductions</small>
-        </article>
-        <article className="metric-card">
-          <span>Chiffre d affaire net</span>
-          <strong>{money(netSales)}</strong>
-          <small>{chiffreAffaires?.nombre_ventes ?? 0} ventes</small>
-        </article>
-        <article className="metric-card accent-green">
-          <span>Benefice total</span>
-          <strong>{money(totalProfit)}</strong>
-          <small>{profitRate.toFixed(1)}% du net</small>
-        </article>
-        {/* <article className="metric-card accent-coral">
-          <span>Articles vendus</span>
-          <strong>{soldItemsCount}</strong>
-          <small>Toutes ventes confondues</small>
-        </article> */}
-        <article className="metric-card accent-gold">
-          <span>Ticket moyen</span>
-          <strong>{money(averageTicket)}</strong>
-          <small>Montant moyen par vente</small>
-        </article>
-      </section>
+      {canViewFinancialStats && (
+        <section className="metric-grid overview-metric-grid">
+          <article className="metric-card accent-cyan">
+            <span>Chiffre d affaire brut</span>
+            <strong>{money(grossSales)}</strong>
+            <small>Avant reductions</small>
+          </article>
+          <article className="metric-card">
+            <span>Chiffre d affaire net</span>
+            <strong>{money(netSales)}</strong>
+            <small>{chiffreAffaires?.nombre_ventes ?? 0} ventes</small>
+          </article>
+          <article className="metric-card accent-green">
+            <span>Benefice total</span>
+            <strong>{money(totalProfit)}</strong>
+            <small>{profitRate.toFixed(1)}% du net</small>
+          </article>
+          <article className="metric-card accent-gold">
+            <span>Ticket moyen</span>
+            <strong>{money(averageTicket)}</strong>
+            <small>Montant moyen par vente</small>
+          </article>
+        </section>
+      )}
 
       <section className="content-grid dashboard-grid">
         <article className="panel">
@@ -126,27 +127,29 @@ export function OverviewPage({
           </div>
         </article>
 
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Graphique</p>
-              <h2>Ventes par jour</h2>
+        {canViewFinancialStats && (
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Graphique</p>
+                <h2>Ventes par jour</h2>
+              </div>
+              <button className="ghost-button compact-button" type="button" onClick={() => setShowSalesChart((current) => !current)}>
+                {showSalesChart ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+                {showSalesChart ? 'Hide' : 'Show'}
+              </button>
             </div>
-            <button className="ghost-button compact-button" type="button" onClick={() => setShowSalesChart((current) => !current)}>
-              {showSalesChart ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
-              {showSalesChart ? 'Hide' : 'Show'}
-            </button>
-          </div>
-          {showSalesChart ? (
-            ventesParJour.length > 0 ? (
-              <SalesTrendChart data={ventesParJour} />
+            {showSalesChart ? (
+              ventesParJour.length > 0 ? (
+                <SalesTrendChart data={ventesParJour} />
+              ) : (
+                <p className="muted">Pas encore de mouvement journalier.</p>
+              )
             ) : (
-              <p className="muted">Pas encore de mouvement journalier.</p>
-            )
-          ) : (
-            <p className="muted">Graphique masque.</p>
-          )}
-        </article>
+              <p className="muted">Graphique masque.</p>
+            )}
+          </article>
+        )}
 
         <article className="panel">
           <div className="panel-header">
@@ -177,7 +180,7 @@ export function OverviewPage({
               <h2>Dernieres ventes</h2>
             </div>
             <div className="panel-actions">
-              <span className="pill">{ventesParJour.length} jours</span>
+              {canViewFinancialStats && <span className="pill">{ventesParJour.length} jours</span>}
               <button className="ghost-button compact-button" type="button" onClick={() => setShowHistory((current) => !current)}>
                 {showHistory ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
                 {showHistory ? 'Hide' : 'Show'}
@@ -202,7 +205,9 @@ export function OverviewPage({
                     <tr>
                       <th>Ticket</th>
                       <th>Client</th>
+                      <th>Marchandises</th>
                       <th>Date</th>
+                      <th>Reduction</th>
                       <th>Total</th>
                       <th>Vendeur</th>
                     </tr>
@@ -219,13 +224,15 @@ export function OverviewPage({
                           >
                             <td data-label="Ticket">#{vente.id}</td>
                             <td data-label="Client">{vente.client}</td>
+                            <td data-label="Marchandises">{saleProductsLabel(vente, produits)}</td>
                             <td data-label="Date">{dateLabel(vente.date_vente)}</td>
+                            <td data-label="Reduction">{money(calculateSaleReduction(vente))}</td>
                             <td data-label="Total">{money(vente.total)}</td>
                             <td data-label="Vendeur">{vente.vendeur_id ?? '-'}</td>
                           </tr>
                           {isExpanded && (
                             <tr className="expanded-row">
-                              <td colSpan={5} className="expanded-sale-cell">
+                              <td colSpan={7} className="expanded-sale-cell">
                                 <div className="sale-expanded">
                                   <div className="sale-expanded-summary">
                                     <div className="sale-summary-chip">
@@ -238,26 +245,31 @@ export function OverviewPage({
                                       <small>Articles vendus</small>
                                     </div>
                                     <div className="sale-summary-chip">
-                                      <span>Benefice estime</span>
-                                      <strong>{money(calculateSaleBenefit(vente))}</strong>
-                                      <small>{formatPercent(calculateSaleBenefitRate(vente))} du total</small>
+                                      <span>Reduction totale</span>
+                                      <strong>{money(calculateSaleReduction(vente))}</strong>
+                                      <small>Lignes et panier</small>
                                     </div>
                                   </div>
                                   <div className="sale-detail-list">
-                                    {(vente.details ?? []).map((detail, index) => (
-                                      <article className="sale-detail-card" key={`${vente.id}-${detail.produit_id}-${index}`}>
-                                        <strong>Produit #{detail.produit_id}</strong>
-                                        {detail.partner_name && <span>Partenaire: {detail.partner_name}</span>}
-                                        <div className="sale-detail-metrics">
-                                          <span>Quantite: {detail.quantite}</span>
-                                          <span>Prix initial: {money(detail.prix_unitaire_initial ?? detail.prix_unitaire)}</span>
-                                          <span>Prix unitaire: {money(detail.prix_unitaire)}</span>
-                                          <span>Reduction ligne: -{money((detail.reduction_ligne ?? 0) * detail.quantite)}</span>
-                                          <span>Part panier: -{money(detail.reduction_panier)}</span>
-                                          <span>Total ligne: {money(detail.quantite * detail.prix_unitaire)}</span>
-                                        </div>
-                                      </article>
-                                    ))}
+                                    {(vente.details ?? []).map((detail, index) => {
+                                      const produit = produits.find((item) => item.id === detail.produit_id)
+
+                                      return (
+                                        <article className="sale-detail-card" key={`${vente.id}-${detail.produit_id}-${index}`}>
+                                          <strong>{produit?.nom ?? `Produit #${detail.produit_id}`}</strong>
+                                          {produit && <span>{produit.type} / {produit.categorie}</span>}
+                                          {detail.partner_name && <span>Partenaire: {detail.partner_name}</span>}
+                                          <div className="sale-detail-metrics">
+                                            <span>Quantite: {detail.quantite}</span>
+                                            <span>Prix initial: {money(detail.prix_unitaire_initial ?? detail.prix_unitaire)}</span>
+                                            <span>Prix unitaire: {money(detail.prix_unitaire)}</span>
+                                            <span>Reduction ligne: -{money((detail.reduction_ligne ?? 0) * detail.quantite)}</span>
+                                            <span>Part panier: -{money(detail.reduction_panier)}</span>
+                                            <span>Total ligne: {money(detail.quantite * detail.prix_unitaire)}</span>
+                                          </div>
+                                        </article>
+                                      )
+                                    })}
                                   </div>
                                 </div>
                               </td>
@@ -268,15 +280,15 @@ export function OverviewPage({
                     })}
                     {filteredVentes.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="empty-cell">
+                        <td colSpan={7} className="empty-cell">
                           Aucune vente enregistree.
                         </td>
                       </tr>
                     )}
                   </tbody>
+                  <TablePaginationFooter colSpan={7} {...ventePagination} />
                 </table>
               </div>
-              <PaginationControls {...ventePagination} />
             </>
           ) : (
             <p className="muted">Historique masque.</p>
@@ -379,23 +391,14 @@ function calculateSaleReduction(vente: Vente) {
   )
 }
 
-function calculateSaleBenefit(vente: Vente) {
-  return Number(
-    (vente.details ?? [])
-      .reduce(
-        (total, detail) => total + (Number(detail.prix_unitaire ?? 0) - Number(detail.prix_achat ?? 0)) * detail.quantite,
-        0,
-      )
-      .toFixed(2),
-  )
-}
+function saleProductsLabel(vente: Vente, produits: Produit[]) {
+  const details = vente.details ?? []
+  if (details.length === 0) return '-'
 
-function calculateSaleBenefitRate(vente: Vente) {
-  const saleTotal = Number(vente.total ?? 0)
-  if (saleTotal <= 0) return 0
-  return (calculateSaleBenefit(vente) / saleTotal) * 100
-}
+  const labels = details.slice(0, 2).map((detail) => {
+    const produit = produits.find((item) => item.id === detail.produit_id)
+    return `${produit?.nom ?? `Produit #${detail.produit_id}`} x${detail.quantite}`
+  })
 
-function formatPercent(value: number) {
-  return `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`
+  return details.length > 2 ? `${labels.join(', ')} +${details.length - 2}` : labels.join(', ')
 }

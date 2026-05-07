@@ -84,7 +84,7 @@ export function UsersPage({
               <th>Utilisateur</th>
               <th>Role</th>
               <th>Statut</th>
-              <th>Actions</th>
+              {canEditUsers && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -99,35 +99,35 @@ export function UsersPage({
                     {user.is_active ? 'Actif' : 'Desactive'}
                   </span>
                 </td>
-                <td data-label="Actions">
-                  <div className="icon-actions">
-                    <button
-                      type="button"
-                      className="icon-button"
-                      title="Modifier"
-                      aria-label="Modifier"
-                      onClick={() => openEditUser(user)}
-                      disabled={!canEditUsers}
-                    >
-                      <Pencil size={16} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-button danger-icon"
-                      title="Supprimer"
-                      aria-label="Supprimer"
-                      onClick={() => onDeleteUser(user.id)}
-                      disabled={!canEditUsers}
-                    >
-                      <Trash2 size={16} aria-hidden="true" />
-                    </button>
-                  </div>
-                </td>
+                {canEditUsers && (
+                  <td data-label="Actions">
+                    <div className="icon-actions">
+                      <button
+                        type="button"
+                        className="icon-button"
+                        title="Modifier"
+                        aria-label="Modifier"
+                        onClick={() => openEditUser(user)}
+                      >
+                        <Pencil size={16} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-button danger-icon"
+                        title="Supprimer"
+                        aria-label="Supprimer"
+                        onClick={() => onDeleteUser(user.id)}
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={4} className="empty-cell">
+                <td colSpan={canEditUsers ? 4 : 3} className="empty-cell">
                   Aucun utilisateur a afficher.
                 </td>
               </tr>

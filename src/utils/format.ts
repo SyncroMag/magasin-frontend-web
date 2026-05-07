@@ -36,3 +36,16 @@ export function dateLabel(value?: string | null) {
     year: 'numeric',
   }).format(new Date(value))
 }
+
+export function dateSearchValues(value?: string | null) {
+  if (!value) return []
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return [value]
+
+  return [
+    value,
+    dateLabel(value),
+    new Intl.DateTimeFormat('fr-FR').format(date),
+  ]
+}

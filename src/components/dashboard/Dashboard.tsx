@@ -2,6 +2,7 @@ import { Boxes, Menu, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../api'
 import { emptyProduct, STORE_NAME } from '../../constants'
+import { dateSearchValues } from '../../utils/format'
 import { confirmAction, importantAlert, notifyError, notifySuccess } from '../../utils/notifications'
 import { pathForView, viewFromPath } from '../../utils/routes'
 import { AccountingPage } from '../accounting/AccountingPage'
@@ -102,6 +103,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
   const canManageUsers = session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'
   const canCreateAdmin = session.role === 'SUPER_ADMIN'
   const canReviewApprovals = session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'
+  const canViewFinancialStats = session.role !== 'VENDEUR'
 
   const lowStockProducts = useMemo(
     () => produits.filter((produit) => produit.quantite <= produit.seuil_alerte),
@@ -121,7 +123,14 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
         (!stockTypeFilter || produit.type === stockTypeFilter) &&
         (!stockCategoryFilter || produit.categorie === stockCategoryFilter) &&
         (!value ||
-          [produit.nom, produit.type, produit.categorie, produit.partner_name ?? ''].some((field) =>
+          [
+            produit.nom,
+            produit.type,
+            produit.categorie,
+            produit.partner_name ?? '',
+            ...dateSearchValues(produit.created_at),
+            ...dateSearchValues(produit.updated_at),
+          ].some((field) =>
             field.toLowerCase().includes(value),
           )),
       )
@@ -151,10 +160,10 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
       ] = await Promise.allSettled([
         api.produits(token),
         api.ventes(token),
-        api.chiffreAffaires(token),
-        api.benefice(token),
+        canViewFinancialStats ? api.chiffreAffaires(token) : Promise.resolve(null),
+        canViewFinancialStats ? api.benefice(token) : Promise.resolve(null),
         api.topProduits(token),
-        api.ventesParJour(token),
+        canViewFinancialStats ? api.ventesParJour(token) : Promise.resolve([]),
         canReviewApprovals ? api.transferts(token) : Promise.resolve([]),
         canReviewApprovals ? api.approvals(token) : Promise.resolve([]),
         canReviewApprovals ? api.adminNotifications(token) : Promise.resolve([]),
@@ -868,6 +877,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
         chiffreAffaires={chiffreAffaires}
         benefice={benefice}
         lowStockProducts={lowStockProducts}
+        produits={produits}
         ventes={ventes}
         topProduits={topProduits}
         ventesParJour={ventesParJour}

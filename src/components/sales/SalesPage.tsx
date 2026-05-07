@@ -1,11 +1,11 @@
-import { Check, ChevronDown, ChevronUp, Pencil, Plus, Printer, ReceiptText, Send, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Pencil, Plus, Printer, ReceiptText, Search, Send, Trash2, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Fragment, useMemo, useState } from 'react'
 import { api } from '../../api'
 import { STORE_NAME } from '../../constants'
 import { FormattedNumberInput } from '../common/FormattedNumberInput'
-import { PaginationControls, usePaginatedItems } from '../common/PaginationControls'
-import { dateLabel, money } from '../../utils/format'
+import { PaginationControls, TablePaginationFooter, usePaginatedItems } from '../common/PaginationControls'
+import { dateLabel, dateSearchValues, money } from '../../utils/format'
 import { confirmAction, notifyError, notifySuccess } from '../../utils/notifications'
 import type { FormEvent, ReactNode } from 'react'
 import type { Produit, Transfert, Vente } from '../../types'
@@ -19,6 +19,14 @@ type CartLine = {
   quantite: number
   prix_unitaire: number
   reduction: number
+}
+
+type TransferLine = {
+  produit_id: number
+  nom: string
+  partner_name?: string | null
+  quantite: number
+  prix_unitaire: number
 }
 
 type SalesPageProps = {
@@ -50,7 +58,9 @@ export function SalesPage({
   const [cartDiscount, setCartDiscount] = useState(0)
   const [comment, setComment] = useState('')
   const [transferDestination, setTransferDestination] = useState('')
+  const [transferLines, setTransferLines] = useState<TransferLine[]>([])
   const [cart, setCart] = useState<CartLine[]>([])
+  const [isTransferFormOpen, setTransferFormOpen] = useState(false)
   const [editingSale, setEditingSale] = useState<Vente | null>(null)
   const [editClient, setEditClient] = useState('')
   const [editLines, setEditLines] = useState<CartLine[]>([])
@@ -64,6 +74,7 @@ export function SalesPage({
   const [listCategory, setListCategory] = useState('')
   const [listProductId, setListProductId] = useState('')
   const [saleSearch, setSaleSearch] = useState('')
+  const [transferSearch, setTransferSearch] = useState('')
   const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null)
   const [appliedListFilters, setAppliedListFilters] = useState({
     type: '',
@@ -137,14 +148,39 @@ export function SalesPage({
       }),
     [appliedListFilters, produits, ventes],
   )
+  const filteredTransferts = useMemo(() => {
+    const value = transferSearch.trim().toLocaleLowerCase()
+    if (!value) return transferts
+
+    return transferts.filter((transfert) =>
+      [
+        transfert.produit?.nom ?? `Produit #${transfert.produit_id}`,
+        transfert.produit?.type ?? '',
+        transfert.produit?.categorie ?? '',
+        transfert.point_vente,
+        transfert.commentaire ?? '',
+        String(transfert.quantite),
+        String(transfert.prix_unitaire),
+        money(transfert.prix_unitaire),
+        transferStatusLabel(transfert.statut),
+        ...dateSearchValues(transfert.created_at),
+      ].some((field) => field.toLocaleLowerCase().includes(value)),
+    )
+  }, [transferSearch, transferts])
 
   const selectedProduct = produits.find((produit) => produit.id === Number(productId))
   const selectedEditProduct = produits.find((produit) => produit.id === Number(editProductId))
   const { pageItems: paginatedVentes, controls: ventePagination } = usePaginatedItems(filteredVentes)
-  const { pageItems: paginatedTransferts, controls: transfertPagination } = usePaginatedItems(transferts)
+  const { pageItems: paginatedTransferts, controls: transfertPagination } = usePaginatedItems(filteredTransferts)
   const selectedProductAvailable = selectedProduct
     ? selectedProduct.quantite -
       cart
+        .filter((line) => line.produit_id === selectedProduct.id)
+        .reduce((total, line) => total + line.quantite, 0)
+    : 0
+  const transferSelectedProductAvailable = selectedProduct
+    ? selectedProduct.quantite -
+      transferLines
         .filter((line) => line.produit_id === selectedProduct.id)
         .reduce((total, line) => total + line.quantite, 0)
     : 0
@@ -175,7 +211,8 @@ export function SalesPage({
   const subtotal = cart.reduce((total, line) => total + lineTotal(line), 0)
   const appliedCartDiscount = clampAmount(cartDiscount, subtotal)
   const total = Math.max(0, subtotal - appliedCartDiscount)
-  const transferTotal = selectedProduct ? roundAmount(quantity * price) : 0
+  const currentTransferLineTotal = selectedProduct ? roundAmount(quantity * price) : 0
+  const transferTotal = transferLines.reduce((total, line) => total + transferLineTotal(line), 0)
 
   function handleTypeChange(value: string) {
     setType(value)
@@ -268,6 +305,37 @@ export function SalesPage({
     setLineDiscount(0)
   }
 
+  function addTransferLine() {
+    if (!selectedProduct) {
+      notifyError('Choisis un produit a transferer.')
+      return
+    }
+
+    if (quantity > transferSelectedProductAvailable) {
+      notifyError(`Quantite disponible: ${transferSelectedProductAvailable}.`)
+      return
+    }
+
+    if (price <= 0) {
+      notifyError('Prix unitaire obligatoire.')
+      return
+    }
+
+    setTransferLines((current) => [
+      ...current,
+      {
+        produit_id: selectedProduct.id,
+        nom: selectedProduct.nom,
+        partner_name: selectedProduct.is_partner ? selectedProduct.partner_name : null,
+        quantite: quantity,
+        prix_unitaire: price,
+      },
+    ])
+    setProductId('')
+    setQuantity(1)
+    setPrice(0)
+  }
+
   async function submitSale(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (cart.length === 0) return
@@ -300,8 +368,8 @@ export function SalesPage({
   async function submitTransfer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (!selectedProduct) {
-      notifyError('Choisis un produit.')
+    if (transferLines.length === 0) {
+      notifyError('Ajoute au moins un produit a transferer.')
       return
     }
 
@@ -310,32 +378,33 @@ export function SalesPage({
       return
     }
 
-    if (quantity > selectedProduct.quantite) {
-      notifyError(`Stock disponible: ${selectedProduct.quantite}.`)
-      return
-    }
-
-    if (price <= 0) {
-      notifyError('Prix unitaire obligatoire.')
-      return
-    }
-
     try {
-      await api.createTransfert(token, {
-        produit_id: selectedProduct.id,
-        quantite: quantity,
-        prix_unitaire: price,
-        point_vente: transferDestination.trim(),
-        commentaire: comment.trim() || null,
+      const invalidLine = transferLines.find((line) => {
+        const produit = produits.find((item) => item.id === line.produit_id)
+        const requestedQuantity = transferLines
+          .filter((item) => item.produit_id === line.produit_id)
+          .reduce((total, item) => total + item.quantite, 0)
+
+        return !produit || requestedQuantity > produit.quantite
       })
-      notifySuccess('Transfert enregistre et notifie aux admins.')
-      setTransferDestination('')
-      setType('')
-      setCategorie('')
-      setProductId('')
-      setQuantity(1)
-      setPrice(0)
-      setComment('')
+
+      if (invalidLine) {
+        notifyError(`Stock insuffisant pour ${invalidLine.nom}.`)
+        return
+      }
+
+      for (const line of transferLines) {
+        await api.createTransfert(token, {
+          produit_id: line.produit_id,
+          quantite: line.quantite,
+          prix_unitaire: line.prix_unitaire,
+          point_vente: transferDestination.trim(),
+          commentaire: comment.trim() || null,
+        })
+      }
+
+      notifySuccess(transferLines.length > 1 ? 'Transferts enregistres et notifies aux admins.' : 'Transfert enregistre et notifie aux admins.')
+      resetTransferForm()
       await onRefresh()
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Transfert impossible')
@@ -462,6 +531,18 @@ export function SalesPage({
     setCart([])
   }
 
+  function resetTransferForm() {
+    setTransferDestination('')
+    setType('')
+    setCategorie('')
+    setProductId('')
+    setQuantity(1)
+    setPrice(0)
+    setComment('')
+    setTransferLines([])
+    setTransferFormOpen(false)
+  }
+
   if (section === 'list') {
     return (
       <article className="panel view-stack">
@@ -533,16 +614,17 @@ export function SalesPage({
               <tr>
                 <th>Ticket</th>
                 <th>Client</th>
+                <th>Marchandises</th>
                 <th>Date</th>
+                <th>Reduction</th>
                 <th>Total</th>
                 <th>Vendeur</th>
-                <th>Actions</th>
+                {canManageSales && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {paginatedVentes.map((vente) => {
                 const isExpanded = expandedSaleId === vente.id
-                const saleBenefit = calculateSaleBenefit(vente)
 
                 return (
                   <Fragment key={vente.id}>
@@ -557,41 +639,43 @@ export function SalesPage({
                         </span>
                       </td>
                       <td data-label="Client">{vente.client}</td>
+                      <td data-label="Marchandises">{saleProductsLabel(vente, produits)}</td>
                       <td data-label="Date">{dateLabel(vente.date_vente)}</td>
+                      <td data-label="Reduction">{money(calculateSaleReduction(vente))}</td>
                       <td data-label="Total">{money(vente.total)}</td>
                       <td data-label="Vendeur">{vente.vendeur_id ?? '-'}</td>
-                      <td data-label="Actions">
-                        <div className="icon-actions">
-                          <button
-                            className="icon-button"
-                            type="button"
-                            title="Modifier"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              openEditSale(vente)
-                            }}
-                            disabled={!canManageSales}
-                          >
-                            <Pencil size={16} aria-hidden="true" />
-                          </button>
-                          <button
-                            className="icon-button danger-icon"
-                            type="button"
-                            title="Supprimer"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void deleteSale(vente.id)
-                            }}
-                            disabled={!canManageSales}
-                          >
-                            <Trash2 size={16} aria-hidden="true" />
-                          </button>
-                        </div>
-                      </td>
+                      {canManageSales && (
+                        <td data-label="Actions">
+                          <div className="icon-actions">
+                            <button
+                              className="icon-button"
+                              type="button"
+                              title="Modifier"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                openEditSale(vente)
+                              }}
+                            >
+                              <Pencil size={16} aria-hidden="true" />
+                            </button>
+                            <button
+                              className="icon-button danger-icon"
+                              type="button"
+                              title="Supprimer"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void deleteSale(vente.id)
+                              }}
+                            >
+                              <Trash2 size={16} aria-hidden="true" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                     {isExpanded && (
                       <tr className="expanded-row">
-                        <td colSpan={6} className="expanded-sale-cell">
+                        <td colSpan={canManageSales ? 8 : 7} className="expanded-sale-cell">
                           <div className="sale-expanded">
                             <div className="sale-expanded-summary">
                               <div className="sale-summary-chip">
@@ -604,15 +688,14 @@ export function SalesPage({
                                 <small>Articles vendus</small>
                               </div>
                               <div className="sale-summary-chip">
-                                <span>Benefice estime</span>
-                                <strong>{money(saleBenefit)}</strong>
-                                <small>{formatPercent(calculateSaleBenefitRate(vente, saleBenefit))} du total</small>
+                                <span>Reduction totale</span>
+                                <strong>{money(calculateSaleReduction(vente))}</strong>
+                                <small>Lignes et panier</small>
                               </div>
                             </div>
                             <div className="sale-detail-list">
                               {(vente.details ?? []).map((detail, index) => {
                                 const produit = produits.find((item) => item.id === detail.produit_id)
-                                const lineBenefit = calculateSaleDetailBenefit(detail)
 
                                 return (
                                   <article className="sale-detail-card" key={`${vente.id}-${detail.produit_id}-${index}`}>
@@ -628,8 +711,6 @@ export function SalesPage({
                                       <span>Reduction ligne: -{money((detail.reduction_ligne ?? 0) * detail.quantite)}</span>
                                       <span>Part panier: -{money(detail.reduction_panier)}</span>
                                       <span>Total ligne: {money(detail.quantite * detail.prix_unitaire)}</span>
-                                      <span>Prix achat: {money(detail.prix_achat)}</span>
-                                      <span>Benefice ligne: {money(lineBenefit)}</span>
                                     </div>
                                   </article>
                                 )
@@ -645,15 +726,15 @@ export function SalesPage({
               })}
               {filteredVentes.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="empty-cell">
+                  <td colSpan={canManageSales ? 8 : 7} className="empty-cell">
                     Aucune vente enregistree.
                   </td>
                 </tr>
               )}
             </tbody>
+            <TablePaginationFooter colSpan={canManageSales ? 8 : 7} {...ventePagination} />
           </table>
         </div>
-        <PaginationControls {...ventePagination} />
         {editingSale && renderEditModal()}
       </article>
     )
@@ -661,73 +742,82 @@ export function SalesPage({
 
   if (section === 'transfer') {
     return (
-      <section className="module-grid">
-        <article className="panel module-side">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Ventes</p>
-              <h2>Nouveau transfert</h2>
-            </div>
-            <Send size={20} aria-hidden="true" />
-          </div>
-          <form className="compact-form" onSubmit={submitTransfer}>
-            <label>
-              Type
-              <select value={type} onChange={(event) => handleTypeChange(event.target.value)}>
-                <option value="">Selectionner un type</option>
-                {typeOptions.map((item) => (
-                  <option value={item} key={item}>
-                    {item}
-                  </option>
-            ))}
-          </select>
-          {selectedProduct?.is_partner && (
-            <span className="profit-note">Partenaire: {selectedProduct.partner_name}</span>
+      <section className="view-stack">
+        <div className="external-action-bar">
+          {!isTransferFormOpen && (
+            <button
+              className="primary-button compact-button"
+              type="button"
+              onClick={() => setTransferFormOpen(true)}
+            >
+              <Plus size={18} aria-hidden="true" />
+              Ajouter transfert
+            </button>
           )}
-        </label>
-            <label>
-              Categorie
-              <select value={categorie} onChange={(event) => handleCategoryChange(event.target.value)} disabled={!type}>
-                <option value="">Selectionner une categorie</option>
-                {categoryOptions.map((item) => (
-                  <option value={item} key={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Produit
-              <select value={productId} onChange={(event) => handleProductChange(event.target.value)} disabled={!categorie}>
-                <option value="">Selectionner un produit</option>
-                {productOptions.map((produit) => (
-                  <option key={produit.id} value={produit.id}>
-                    {productOptionLabel(produit)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Client ou point de vente
-              <input
-                required
-                value={transferDestination}
-                onChange={(event) => setTransferDestination(event.target.value)}
-              />
-            </label>
-            <div className="two-cols">
-              <label>
+        </div>
+
+        {isTransferFormOpen && (
+          <article className="panel wide transfer-add-card">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Ventes</p>
+                <h2>Ajouter transfert</h2>
+              </div>
+              <Send size={20} aria-hidden="true" />
+            </div>
+            <form className="external-form-panel transfer-form-panel" onSubmit={submitTransfer}>
+              <label className="transfer-type-field">
+                Type
+                <select value={type} onChange={(event) => handleTypeChange(event.target.value)}>
+                  <option value="">Selectionner un type</option>
+                  {typeOptions.map((item) => (
+                    <option value={item} key={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+                {selectedProduct?.is_partner && (
+                  <span className="profit-note">Partenaire: {selectedProduct.partner_name}</span>
+                )}
+              </label>
+              <label className="transfer-category-field">
+                Categorie
+                <select value={categorie} onChange={(event) => handleCategoryChange(event.target.value)} disabled={!type}>
+                  <option value="">Selectionner une categorie</option>
+                  {categoryOptions.map((item) => (
+                    <option value={item} key={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="transfer-product-field">
+                Produit
+                <select value={productId} onChange={(event) => handleProductChange(event.target.value)} disabled={!categorie}>
+                  <option value="">Selectionner un produit</option>
+                  {productOptions.map((produit) => (
+                    <option key={produit.id} value={produit.id}>
+                      {productOptionLabel(produit)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="transfer-quantity-field">
                 Quantite
                 <input
                   type="number"
                   min="1"
-                  max={Math.max(1, selectedProduct?.quantite ?? 1)}
+                  max={Math.max(1, transferSelectedProductAvailable)}
                   value={quantity}
                   onChange={(event) => setQuantity(Number(event.target.value))}
                 />
-                {selectedProduct && <span className="profit-note">Stock disponible: {selectedProduct.quantite}</span>}
+                {selectedProduct && <span className="profit-note">Stock disponible: {transferSelectedProductAvailable}</span>}
               </label>
-              <label>
+              <label className="transfer-ceiling-price-field">
+                Prix plafond
+                <input value={selectedProduct ? money(selectedProduct.prix_plafond) : ''} readOnly />
+              </label>
+              <label className="transfer-price-field">
                 Prix unitaire
                 <FormattedNumberInput
                   value={price}
@@ -735,28 +825,76 @@ export function SalesPage({
                   onValueChange={setPrice}
                 />
               </label>
-            </div>
-            <label>
-              Commentaire
-              <input
-                value={comment}
-                onChange={(event) => setComment(event.target.value)}
-              />
-            </label>
-            <div className="ticket-summary">
-              <div className="ticket-total">
-                <span>Total transfert</span>
-                <strong>{money(transferTotal)}</strong>
+              <div className="transfer-total-chip">
+                <span>Total produit</span>
+                <strong>{money(currentTransferLineTotal)}</strong>
               </div>
-            </div>
-            <button className="primary-button" type="submit" disabled={!selectedProduct}>
-              <Send size={18} aria-hidden="true" />
-              Transferer
-            </button>
-          </form>
-        </article>
+              <div className="filter-actions transfer-actions">
+                <button className="primary-button compact-button" type="button" onClick={addTransferLine} disabled={!selectedProduct}>
+                  <Plus size={18} aria-hidden="true" />
+                  Ajouter
+                </button>
+              </div>
+              <div className="transfer-lines-panel">
+                <div className="transfer-lines-header">
+                  <div>
+                    <p className="eyebrow">Enregistrement</p>
+                    <h3>Produits a transferer</h3>
+                  </div>
+                  <strong>{money(transferTotal)}</strong>
+                </div>
+                <div className="ticket-lines transfer-ticket-lines">
+                  {transferLines.map((line, index) => (
+                    <div className="ticket-line" key={`${line.produit_id}-${index}`}>
+                      <span>
+                        {line.nom} x {line.quantite}
+                        {line.partner_name ? ` - partenaire ${line.partner_name}` : ''}
+                      </span>
+                      <strong>{money(transferLineTotal(line))}</strong>
+                      <button
+                        type="button"
+                        aria-label="Retirer produit"
+                        onClick={() => setTransferLines((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                      >
+                        <X size={14} aria-hidden="true" />
+                      </button>
+                    </div>
+                  ))}
+                  {transferLines.length === 0 && <p className="muted">Aucun produit ajoute.</p>}
+                </div>
+              </div>
+              <div className="transfer-confirm-panel">
+                <label>
+                  Point de vente
+                  <input
+                    required
+                    value={transferDestination}
+                    onChange={(event) => setTransferDestination(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Commentaire
+                  <input
+                    value={comment}
+                    onChange={(event) => setComment(event.target.value)}
+                  />
+                </label>
+                <div className="transfer-submit-row">
+                  <button className="primary-button compact-button" type="submit" disabled={transferLines.length === 0}>
+                    <Send size={16} aria-hidden="true" />
+                    Transferer
+                  </button>
+                  <button className="ghost-button compact-button" type="button" onClick={resetTransferForm}>
+                    <X size={16} aria-hidden="true" />
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            </form>
+          </article>
+        )}
 
-        <article className="panel module-main">
+        <article className="panel wide">
           <div className="panel-header">
             <div>
               <p className="eyebrow">Historique</p>
@@ -764,8 +902,19 @@ export function SalesPage({
             </div>
             <ReceiptText size={20} aria-hidden="true" />
           </div>
-          <div className="table-wrap">
-            <table>
+          <label className="transfer-history-search">
+            Recherche
+            <span className="search-field">
+              <Search size={18} aria-hidden="true" />
+              <input
+                value={transferSearch}
+                onChange={(event) => setTransferSearch(event.target.value)}
+                placeholder="Produit, point de vente ou date"
+              />
+            </span>
+          </label>
+          <div className="table-wrap no-x-scroll">
+            <table className="transfer-history-table">
               <thead>
                 <tr>
                   <th>Produit</th>
@@ -774,7 +923,7 @@ export function SalesPage({
                   <th>Prix unitaire</th>
                   <th>Statut</th>
                   <th>Date</th>
-                  <th>Action</th>
+                  {canManageSales && <th>Action</th>}
                 </tr>
               </thead>
               <tbody>
@@ -795,21 +944,23 @@ export function SalesPage({
                       </span>
                     </td>
                     <td data-label="Date">{dateLabel(transfert.created_at)}</td>
-                    <td data-label="Action">
-                      <select
-                        value={transfert.statut}
-                        onChange={(event) => void updateTransferStatus(transfert.id, event.target.value as 'NON_PAYE' | 'PAYE' | 'REFUSE')}
-                      >
-                        <option value="NON_PAYE">Non paye</option>
-                        <option value="PAYE">Paye</option>
-                        <option value="REFUSE">Refuser</option>
-                      </select>
-                    </td>
+                    {canManageSales && (
+                      <td data-label="Action">
+                        <select
+                          value={transfert.statut}
+                          onChange={(event) => void updateTransferStatus(transfert.id, event.target.value as 'NON_PAYE' | 'PAYE' | 'REFUSE')}
+                        >
+                          <option value="NON_PAYE">Non paye</option>
+                          <option value="PAYE">Paye</option>
+                          <option value="REFUSE">Refuser</option>
+                        </select>
+                      </td>
+                    )}
                   </tr>
                 ))}
-                {transferts.length === 0 && (
+                {filteredTransferts.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="empty-cell">
+                    <td colSpan={canManageSales ? 7 : 6} className="empty-cell">
                       Aucun transfert enregistre.
                     </td>
                   </tr>
@@ -1146,6 +1297,10 @@ function lineTotal(line: CartLine) {
   return roundAmount(line.quantite * unitPriceAfterLineDiscount(line))
 }
 
+function transferLineTotal(line: TransferLine) {
+  return roundAmount(line.quantite * line.prix_unitaire)
+}
+
 function unitPriceAfterLineDiscount(line: CartLine) {
   return Math.max(0, line.prix_unitaire - clampAmount(line.reduction, line.prix_unitaire))
 }
@@ -1220,6 +1375,7 @@ function matchesSaleSearch(vente: Vente, query: string, produits: Produit[]) {
     vente.client,
     String(vente.id),
     `#${vente.id}`,
+    ...dateSearchValues(vente.date_vente),
     ...(vente.details ?? []).flatMap((detail) => {
       const produit = produits.find((item) => item.id === detail.produit_id)
       return [produit?.nom ?? '', produit?.type ?? '', produit?.categorie ?? '', detail.partner_name ?? '']
@@ -1229,24 +1385,28 @@ function matchesSaleSearch(vente: Vente, query: string, produits: Produit[]) {
   return searchableValues.some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
 }
 
-function calculateSaleDetailBenefit(detail: NonNullable<Vente['details']>[number]) {
-  const purchasePrice = Number(detail.prix_achat ?? 0)
-  const unitPrice = Number(detail.prix_unitaire ?? 0)
-  return roundAmount((unitPrice - purchasePrice) * detail.quantite)
+function calculateSaleReduction(vente: Vente) {
+  return roundAmount(
+    (vente.details ?? []).reduce(
+      (total, detail) =>
+        total +
+        Number((detail.reduction_ligne ?? 0) * detail.quantite) +
+        Number(detail.reduction_panier ?? 0),
+      0,
+    ),
+  )
 }
 
-function calculateSaleBenefit(vente: Vente) {
-  return roundAmount((vente.details ?? []).reduce((total, detail) => total + calculateSaleDetailBenefit(detail), 0))
-}
+function saleProductsLabel(vente: Vente, produits: Produit[]) {
+  const details = vente.details ?? []
+  if (details.length === 0) return '-'
 
-function calculateSaleBenefitRate(vente: Vente, saleBenefit = calculateSaleBenefit(vente)) {
-  const saleTotal = Number(vente.total ?? 0)
-  if (saleTotal <= 0) return 0
-  return (saleBenefit / saleTotal) * 100
-}
+  const labels = details.slice(0, 2).map((detail) => {
+    const produit = produits.find((item) => item.id === detail.produit_id)
+    return `${produit?.nom ?? `Produit #${detail.produit_id}`} x${detail.quantite}`
+  })
 
-function formatPercent(value: number) {
-  return `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`
+  return details.length > 2 ? `${labels.join(', ')} +${details.length - 2}` : labels.join(', ')
 }
 
 function transferStatusLabel(value?: string) {

@@ -96,10 +96,12 @@ export function OutilsPage({
           <p className="eyebrow">Espace admin</p>
           <h2>Outils magasin</h2>
         </div>
-        <button className="primary-button compact-button" type="button" onClick={openCreate} disabled={!canManage}>
-          <Plus size={18} aria-hidden="true" />
-          Ajouter
-        </button>
+        {canManage && (
+          <button className="primary-button compact-button" type="button" onClick={openCreate}>
+            <Plus size={18} aria-hidden="true" />
+            Ajouter
+          </button>
+        )}
       </div>
       <div className="table-wrap">
         <table>
@@ -110,7 +112,7 @@ export function OutilsPage({
               <th>Categorie</th>
               <th>Nombre</th>
               <th>Valeur estimee</th>
-              <th>Actions</th>
+              {canManage && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -123,27 +125,28 @@ export function OutilsPage({
                 <td data-label="Categorie">{outil.categorie || '-'}</td>
                 <td data-label="Nombre">{outil.quantite}</td>
                 <td data-label="Valeur estimee">{money(outil.valeur_estimee)}</td>
-                <td data-label="Actions">
-                  <div className="icon-actions">
-                    <button className="icon-button" type="button" title="Modifier" onClick={() => openEdit(outil)}>
-                      <Pencil size={16} aria-hidden="true" />
-                    </button>
-                    <button
-                      className="icon-button danger-icon"
-                      type="button"
-                      title="Supprimer"
-                      onClick={() => onDelete(outil.id)}
-                      disabled={!canManage}
-                    >
-                      <Trash2 size={16} aria-hidden="true" />
-                    </button>
-                  </div>
-                </td>
+                {canManage && (
+                  <td data-label="Actions">
+                    <div className="icon-actions">
+                      <button className="icon-button" type="button" title="Modifier" onClick={() => openEdit(outil)}>
+                        <Pencil size={16} aria-hidden="true" />
+                      </button>
+                      <button
+                        className="icon-button danger-icon"
+                        type="button"
+                        title="Supprimer"
+                        onClick={() => onDelete(outil.id)}
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
             {outils.length === 0 && (
               <tr>
-                <td colSpan={6} className="empty-cell">
+                <td colSpan={canManage ? 6 : 5} className="empty-cell">
                   Aucun outil a afficher.
                 </td>
               </tr>

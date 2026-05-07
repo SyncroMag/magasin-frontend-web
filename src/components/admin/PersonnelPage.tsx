@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Fragment, useMemo, useState } from 'react'
 import { FormattedNumberInput } from '../common/FormattedNumberInput'
 import { PaginationControls, usePaginatedItems } from '../common/PaginationControls'
-import { dateLabel, money } from '../../utils/format'
+import { dateLabel, dateSearchValues, money } from '../../utils/format'
 import type { FormEvent, ReactNode } from 'react'
 import type { AbsenceType, AccountingAccount, Employe, EmployeCreate } from '../../types'
 
@@ -73,7 +73,18 @@ export function PersonnelPage({
     if (!value) return employes
 
     return employes.filter((employe) =>
-      [employe.nom, employe.prenoms, employe.cin, employe.lot ?? ''].some((field) =>
+      [
+        employe.nom,
+        employe.prenoms,
+        employe.cin,
+        employe.lot ?? '',
+        ...dateSearchValues(employe.date_embauche),
+        ...dateSearchValues(employe.date_cin),
+        ...dateSearchValues(employe.date_naissance),
+        ...dateSearchValues(employe.date_13eme_prevue),
+        ...(employe.absences ?? []).flatMap((absence) => dateSearchValues(absence.date_absence)),
+        ...(employe.avances ?? []).flatMap((avance) => dateSearchValues(avance.date_avance)),
+      ].some((field) =>
         field.toLowerCase().includes(value),
       ),
     )
@@ -155,18 +166,22 @@ export function PersonnelPage({
   return (
     <section className="view-stack">
       <div className="external-action-bar">
-        <button className="ghost-button compact-button" type="button" onClick={() => setActivePanel('absence')} disabled={!canManage}>
-          <Plus size={18} aria-hidden="true" />
-          Ajouter absence
-        </button>
-        <button className="ghost-button compact-button" type="button" onClick={() => setActivePanel('avance')} disabled={!canManage}>
-          <Plus size={18} aria-hidden="true" />
-          Ajouter avance
-        </button>
-        <button className="primary-button compact-button" type="button" onClick={openCreate} disabled={!canManage}>
-          <UserPlus size={18} aria-hidden="true" />
-          Ajouter personnel
-        </button>
+        {canManage && (
+          <>
+            <button className="ghost-button compact-button" type="button" onClick={() => setActivePanel('absence')}>
+              <Plus size={18} aria-hidden="true" />
+              Ajouter absence
+            </button>
+            <button className="ghost-button compact-button" type="button" onClick={() => setActivePanel('avance')}>
+              <Plus size={18} aria-hidden="true" />
+              Ajouter avance
+            </button>
+            <button className="primary-button compact-button" type="button" onClick={openCreate}>
+              <UserPlus size={18} aria-hidden="true" />
+              Ajouter personnel
+            </button>
+          </>
+        )}
       </div>
 
       {activePanel === 'absence' && (
@@ -316,7 +331,7 @@ export function PersonnelPage({
                 <th>Salaire mensuel</th>
                 <th>Avances</th>
                 <th>Salaire final</th>
-                <th>Actions</th>
+                {canManage && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -343,26 +358,27 @@ export function PersonnelPage({
                       <td data-label="Salaire mensuel">{money(employe.salaire_mensuel)}</td>
                       <td data-label="Avances">{money(employe.total_avances_mois)}</td>
                       <td data-label="Salaire final">{money(employe.salaire_final)}</td>
-                      <td data-label="Actions" onClick={(event) => event.stopPropagation()}>
-                        <div className="icon-actions">
-                          <button className="icon-button" type="button" title="Modifier" onClick={() => openEdit(employe)}>
-                            <Pencil size={16} aria-hidden="true" />
-                          </button>
-                          <button
-                            className="icon-button danger-icon"
-                            type="button"
-                            title="Supprimer"
-                            onClick={() => onDelete(employe.id)}
-                            disabled={!canManage}
-                          >
-                            <Trash2 size={16} aria-hidden="true" />
-                          </button>
-                        </div>
-                      </td>
+                      {canManage && (
+                        <td data-label="Actions" onClick={(event) => event.stopPropagation()}>
+                          <div className="icon-actions">
+                            <button className="icon-button" type="button" title="Modifier" onClick={() => openEdit(employe)}>
+                              <Pencil size={16} aria-hidden="true" />
+                            </button>
+                            <button
+                              className="icon-button danger-icon"
+                              type="button"
+                              title="Supprimer"
+                              onClick={() => onDelete(employe.id)}
+                            >
+                              <Trash2 size={16} aria-hidden="true" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                     {isExpanded && (
                       <tr className="expanded-row">
-                        <td colSpan={7}>
+                        <td colSpan={canManage ? 7 : 6}>
                           <div className="expanded-content">
                             <div className="metric-card accent-green">
                               <span>Date 13e mois prevue</span>
@@ -378,14 +394,15 @@ export function PersonnelPage({
                                       <strong>{absenceLabel(absence.type_absence)}</strong>
                                       <span>{dateLabel(absence.date_absence)}</span>
                                     </div>
-                                    <button
-                                      className="icon-button danger-icon"
-                                      type="button"
-                                      onClick={() => onDeleteAbsence(absence.id)}
-                                      disabled={!canManage}
-                                    >
-                                      <X size={16} aria-hidden="true" />
-                                    </button>
+                                    {canManage && (
+                                      <button
+                                        className="icon-button danger-icon"
+                                        type="button"
+                                        onClick={() => onDeleteAbsence(absence.id)}
+                                      >
+                                        <X size={16} aria-hidden="true" />
+                                      </button>
+                                    )}
                                   </div>
                                 ))}
                                 {employe.absences.length === 0 && <p className="muted">Aucune absence.</p>}
@@ -400,14 +417,15 @@ export function PersonnelPage({
                                       <strong>{money(avance.montant)}</strong>
                                       <span>{dateLabel(avance.date_avance)}</span>
                                     </div>
-                                    <button
-                                      className="icon-button danger-icon"
-                                      type="button"
-                                      onClick={() => onDeleteAvance(avance.id)}
-                                      disabled={!canManage}
-                                    >
-                                      <X size={16} aria-hidden="true" />
-                                    </button>
+                                    {canManage && (
+                                      <button
+                                        className="icon-button danger-icon"
+                                        type="button"
+                                        onClick={() => onDeleteAvance(avance.id)}
+                                      >
+                                        <X size={16} aria-hidden="true" />
+                                      </button>
+                                    )}
                                   </div>
                                 ))}
                                 {employe.avances.length === 0 && <p className="muted">Aucune avance.</p>}

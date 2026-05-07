@@ -1,5 +1,8 @@
 import type {
   Approval,
+  Arrivage,
+  ArrivageCreate,
+  ArrivageUpdate,
   AccountingAccount,
   AccountingEntry,
   AccountingInventory,
@@ -162,6 +165,30 @@ export const api = {
     return request<Transfert>('/ventes/transferts', token, {
       method: 'POST',
       body: JSON.stringify(transfert),
+    })
+  },
+
+  arrivages(token: string) {
+    return request<Arrivage[]>('/arrivages/', token)
+  },
+
+  createArrivage(token: string, arrivage: ArrivageCreate) {
+    return request<Arrivage>('/arrivages/', token, {
+      method: 'POST',
+      body: JSON.stringify(arrivage),
+    })
+  },
+
+  updateArrivage(token: string, id: number, arrivage: ArrivageUpdate) {
+    return request<Arrivage>(`/arrivages/${id}`, token, {
+      method: 'PUT',
+      body: JSON.stringify(arrivage),
+    })
+  },
+
+  deleteArrivage(token: string, id: number) {
+    return request<{ message: string }>(`/arrivages/${id}`, token, {
+      method: 'DELETE',
     })
   },
 
