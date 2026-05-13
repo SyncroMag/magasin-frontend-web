@@ -1,5 +1,5 @@
-import { ArrowRightLeft, Check, Plus, Printer, ReceiptText } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { ArrowRightLeft, Check, ChevronDown, ChevronUp, Plus, Printer, ReceiptText } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api } from '../../api'
 import { STORE_NAME } from '../../constants'
 import { FormattedNumberInput } from '../common/FormattedNumberInput'
@@ -7,7 +7,17 @@ import { PaginationControls, usePaginatedItems } from '../common/PaginationContr
 import { dateLabel, money } from '../../utils/format'
 import { notifyError } from '../../utils/notifications'
 import type { FormEvent, ReactNode } from 'react'
-import type { AccountingAccount, AccountingEntry, AccountingInventory, AccountingSummary, Employe } from '../../types'
+import type {
+  AccountingAccount,
+  AccountingEntry,
+  AccountingInventory,
+  AccountingSummary,
+  Arrivage,
+  Employe,
+  Produit,
+  Transfert,
+  Vente,
+} from '../../types'
 
 export type AccountingSection = 'cash' | 'vault' | 'expenses' | 'inventory'
 
@@ -16,6 +26,9 @@ type AccountingPageProps = {
   token: string
   summary: AccountingSummary | null
   entries: AccountingEntry[]
+  produits: Produit[]
+  ventes: Vente[]
+  transferts: Transfert[]
   employes: Employe[]
   onManual: (data: { account: AccountingAccount; amount: number; motif: string }) => Promise<void>
   onTransfer: (data: { from_account: AccountingAccount; to_account: AccountingAccount; amount: number; motif: string }) => Promise<void>
@@ -28,11 +41,37 @@ const accountBySection: Record<'cash' | 'vault', AccountingAccount> = {
   vault: 'COFFRE',
 }
 
+type StockMovementRow = {
+  id: string
+  date: string
+  type: 'ACHAT' | 'VENTE' | 'TRANSFERT'
+  sens: 'ENTREE' | 'SORTIE'
+  produit: string
+  quantite: number
+  valeur: number
+  detail: string
+}
+
+type CashMovementRow = {
+  id: string
+  date: string
+  operation: string
+  canal: string
+  motif: string
+  debit: number
+  credit: number
+  source: 'COMPTA' | 'TIERS'
+  countInTotals: boolean
+}
+
 export function AccountingPage({
   section,
   token,
   summary,
   entries,
+  produits,
+  ventes,
+  transferts,
   employes,
   onManual,
   onTransfer,
@@ -53,6 +92,7 @@ export function AccountingPage({
   })
   const [inventoryMonth, setInventoryMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [inventory, setInventory] = useState<AccountingInventory | null>(null)
+  const [arrivages, setArrivages] = useState<Arrivage[]>([])
   const [inventoryLoading, setInventoryLoading] = useState(false)
   const selectedSalaryEmploye = employes.find((item) => item.id === Number(salaryForm.employe_id))
   const salaryAbsenceDeduction = selectedSalaryEmploye
@@ -69,11 +109,85 @@ export function AccountingPage({
     () => (account ? entries.filter((entry) => entry.account === account) : entries),
     [account, entries],
   )
+  const productsById = useMemo(() => new Map(produits.map((produit) => [produit.id, produit])), [produits])
+  const inventoryEntries = useMemo(() => inventory?.entries ?? [], [inventory])
+  const activeProducts = useMemo(() => produits.filter((produit) => produit.is_active), [produits])
+  const monthSales = useMemo(
+    () => ventes.filter((vente) => isMonthMatch(saleDateValue(vente), inventoryMonth)),
+    [inventoryMonth, ventes],
+  )
+  const monthTransfers = useMemo(
+    () => transferts.filter((transfert) => isMonthMatch(transfert.created_at, inventoryMonth)),
+    [inventoryMonth, transferts],
+  )
+  const monthArrivals = useMemo(
+    () => arrivages.filter((arrivage) => isMonthMatch(arrivage.date_arrivage || arrivage.created_at, inventoryMonth)),
+    [arrivages, inventoryMonth],
+  )
+  const stockMovements = useMemo(
+    () => buildStockMovements({ sales: monthSales, transfers: monthTransfers, arrivals: monthArrivals, productsById }),
+    [monthArrivals, monthSales, monthTransfers, productsById],
+  )
+  const activeProductsTotals = useMemo(
+    () =>
+      activeProducts.reduce(
+        (totals, produit) => {
+          totals.quantity += Number(produit.quantite) || 0
+          totals.purchase += (Number(produit.quantite) || 0) * (Number(produit.cout_achat) || 0)
+          totals.sale += (Number(produit.quantite) || 0) * (Number(produit.prix_vente) || 0)
+          return totals
+        },
+        { quantity: 0, purchase: 0, sale: 0 },
+      ),
+    [activeProducts],
+  )
+  const arrivalsTotals = useMemo(
+    () =>
+      monthArrivals.reduce(
+        (totals, arrivage) => {
+          totals.lines += Number(arrivage.total_lignes) || 0
+          totals.quantity += Number(arrivage.total_quantite) || 0
+          for (const line of arrivage.lignes) {
+            totals.purchase += Number(line.quantite_ajoutee || 0) * Number(line.cout_achat || 0)
+            totals.sale += Number(line.quantite_ajoutee || 0) * Number(line.prix_vente || 0)
+          }
+          return totals
+        },
+        { lines: 0, quantity: 0, purchase: 0, sale: 0 },
+      ),
+    [monthArrivals],
+  )
+  const cashMovementRows = useMemo(
+    () => buildGeneralCashMovements({ entries: inventoryEntries, transfers: monthTransfers, productsById }),
+    [inventoryEntries, monthTransfers, productsById],
+  )
+  const cashMovementTotals = useMemo(
+    () =>
+      cashMovementRows.reduce(
+        (totals, row) => {
+          if (row.countInTotals) {
+            totals.debit += row.debit
+            totals.credit += row.credit
+          }
+          return totals
+        },
+        { debit: 0, credit: 0 },
+      ),
+    [cashMovementRows],
+  )
+  const transferCounters = useMemo(
+    () => ({
+      internal: cashMovementRows.filter((row) => row.operation.toLowerCase().includes('transfert interne')).length,
+      tiers: cashMovementRows.filter((row) => row.source === 'TIERS').length,
+    }),
+    [cashMovementRows],
+  )
 
   useEffect(() => {
     if (section !== 'inventory') return
 
     void loadInventory(inventoryMonth)
+    void loadArrivages()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section, inventoryMonth, token])
 
@@ -85,6 +199,14 @@ export function AccountingPage({
       notifyError(err instanceof Error ? err.message : 'Inventaire impossible a charger')
     } finally {
       setInventoryLoading(false)
+    }
+  }
+
+  async function loadArrivages() {
+    try {
+      setArrivages(await api.arrivages(token))
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Arrivages impossibles a charger')
     }
   }
 
@@ -222,8 +344,6 @@ export function AccountingPage({
   }
 
   if (section === 'inventory') {
-    const inventoryEntries = inventory?.entries ?? []
-
     return (
       <section className="view-stack">
         <article className="panel view-stack">
@@ -235,8 +355,20 @@ export function AccountingPage({
             <button
               className="ghost-button compact-button"
               type="button"
-              onClick={() => inventory && printInventory(inventory)}
-              disabled={!inventory || inventoryLoading}
+              onClick={() =>
+                printInventoryGeneralReport({
+                  month: inventoryMonth,
+                  inventory,
+                  cashMovements: cashMovementRows,
+                  cashTotals: cashMovementTotals,
+                  stockMovements,
+                  activeProducts,
+                  activeProductsTotals,
+                  arrivals: monthArrivals,
+                  arrivalsTotals,
+                })
+              }
+              disabled={inventoryLoading}
             >
               <Printer size={16} aria-hidden="true" />
               Imprimer
@@ -265,24 +397,57 @@ export function AccountingPage({
           <Metric label="Total sortie" value={inventory?.total_out ?? 0} />
         </div>
 
-        <EntriesTable
-          entries={inventoryEntries}
-          title={inventoryLoading ? 'Chargement inventaire' : 'Mouvements du mois'}
-          footer={
-            inventory ? (
-              <tr className="total-row">
-                <td data-label="Date">Total</td>
-                <td data-label="Compte">-</td>
-                <td data-label="Type">Entrees / sorties</td>
-                <td data-label="Motif">Mois {inventory.month}</td>
-                <td data-label="Montant" className="total-row-cell">
-                  <strong className="amount-positive">{money(inventory.total_in)}</strong>
-                  <span className="amount-negative"> / -{money(inventory.total_out)}</span>
-                </td>
-              </tr>
-            ) : null
-          }
-        />
+        <article className="panel view-stack">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Comptabilite</p>
+              <h2>Mouvements comptables du mois</h2>
+            </div>
+          </div>
+          <div className="panel-actions">
+            <span className="pill info">Mois {inventoryMonth}</span>
+            <span className="pill">Lignes: {cashMovementRows.length}</span>
+            <span className="pill">Transferts internes: {transferCounters.internal}</span>
+            <span className="pill ok">Debit: {money(cashMovementTotals.debit)}</span>
+            <span className="pill warn">Credit: {money(cashMovementTotals.credit)}</span>
+            <span className="pill">Transferts vers tiers: {transferCounters.tiers}</span>
+          </div>
+          <CashMovementsTable rows={cashMovementRows} />
+        </article>
+
+        <article className="panel view-stack">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Inventaire stock</p>
+              <h2>Produits actifs et valorisation</h2>
+            </div>
+          </div>
+          <div className="panel-actions">
+            <span className="pill">{activeProducts.length} produits actifs</span>
+            <span className="pill info">Quantite totale: {activeProductsTotals.quantity}</span>
+            <span className="pill ok">Valeur achat: {money(activeProductsTotals.purchase)}</span>
+            <span className="pill warn">Valeur vente: {money(activeProductsTotals.sale)}</span>
+          </div>
+          <ActiveProductsTable rows={activeProducts} />
+        </article>
+
+        <article className="panel view-stack">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Inventaire stock</p>
+              <h2>Liste des arrivages</h2>
+            </div>
+          </div>
+          <div className="panel-actions">
+            <span className="pill info">Mois {inventoryMonth}</span>
+            <span className="pill">{monthArrivals.length} arrivages</span>
+            <span className="pill">Lignes: {arrivalsTotals.lines}</span>
+            <span className="pill ok">QTT: {arrivalsTotals.quantity}</span>
+            <span className="pill warn">Valeur achat: {money(arrivalsTotals.purchase)}</span>
+            <span className="pill">Valeur vente: {money(arrivalsTotals.sale)}</span>
+          </div>
+          <ArrivalsTable rows={monthArrivals} />
+        </article>
       </section>
     )
   }
@@ -455,6 +620,361 @@ function EntriesTable({
   )
 }
 
+function CashMovementsTable({ rows }: { rows: CashMovementRow[] }) {
+  const { pageItems, controls } = usePaginatedItems(rows)
+
+  return (
+    <>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Operation</th>
+              <th>Canal</th>
+              <th>Motif</th>
+              <th>Debit</th>
+              <th>Credit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageItems.map((row) => (
+              <tr key={row.id}>
+                <td data-label="Date">{dateLabel(row.date)}</td>
+                <td data-label="Operation">{row.operation}</td>
+                <td data-label="Canal">{row.canal}</td>
+                <td data-label="Motif">
+                  <strong>{row.motif}</strong>
+                  <span>{row.source === 'TIERS' ? 'Source: transfert vers tiers' : 'Source: comptabilite'}</span>
+                </td>
+                <td data-label="Debit">
+                  <strong className={row.debit > 0 ? 'amount-positive' : ''}>{row.debit > 0 ? money(row.debit) : '-'}</strong>
+                </td>
+                <td data-label="Credit">
+                  <strong className={row.credit > 0 ? 'amount-negative' : ''}>{row.credit > 0 ? money(row.credit) : '-'}</strong>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={6} className="empty-cell">
+                  Aucun mouvement pour ce mois.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <PaginationControls {...controls} />
+    </>
+  )
+}
+
+function ActiveProductsTable({ rows }: { rows: Produit[] }) {
+  const { pageItems, controls } = usePaginatedItems(rows)
+
+  return (
+    <>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Produit</th>
+              <th>Type / Categorie</th>
+              <th>QTT</th>
+              <th>Cout unitaire</th>
+              <th>Prix vente</th>
+              <th>Valeur achat</th>
+              <th>Valeur vente</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageItems.map((produit) => (
+              <tr key={produit.id}>
+                <td data-label="Produit">
+                  <strong>{produit.nom}</strong>
+                  <span>{produit.partner_name ? `Partenaire: ${produit.partner_name}` : 'Interne'}</span>
+                </td>
+                <td data-label="Type / Categorie">
+                  {produit.type} / {produit.categorie}
+                </td>
+                <td data-label="QTT">{produit.quantite}</td>
+                <td data-label="Cout unitaire">{money(produit.cout_achat)}</td>
+                <td data-label="Prix vente">{money(produit.prix_vente)}</td>
+                <td data-label="Valeur achat">{money(Number(produit.quantite) * Number(produit.cout_achat))}</td>
+                <td data-label="Valeur vente">{money(Number(produit.quantite) * Number(produit.prix_vente))}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={7} className="empty-cell">
+                  Aucun produit actif.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <PaginationControls {...controls} />
+    </>
+  )
+}
+
+function ArrivalsTable({ rows }: { rows: Arrivage[] }) {
+  const { pageItems, controls } = usePaginatedItems(rows)
+  const [expandedArrivalId, setExpandedArrivalId] = useState<number | null>(null)
+
+  function toggleArrival(arrivageId: number) {
+    setExpandedArrivalId((current) => (current === arrivageId ? null : arrivageId))
+  }
+
+  return (
+    <>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date arrivage</th>
+              <th>Commentaire</th>
+              <th>Lignes</th>
+              <th>QTT</th>
+              <th>Valeur achat</th>
+              <th>Valeur vente</th>
+              <th>Enregistre le</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageItems.map((arrivage) => {
+              const isExpanded = expandedArrivalId === arrivage.id
+              const purchaseValue = arrivage.lignes.reduce(
+                (total, line) => total + Number(line.quantite_ajoutee) * Number(line.cout_achat),
+                0,
+              )
+              const saleValue = arrivage.lignes.reduce(
+                (total, line) => total + Number(line.quantite_ajoutee) * Number(line.prix_vente),
+                0,
+              )
+
+              return (
+                <Fragment key={arrivage.id}>
+                  <tr
+                    className={`clickable-row${isExpanded ? ' selected-row' : ''}`}
+                    onClick={() => toggleArrival(arrivage.id)}
+                  >
+                    <td data-label="Date arrivage">{dateLabel(arrivage.date_arrivage)}</td>
+                    <td data-label="Commentaire">{arrivage.commentaire || '-'}</td>
+                    <td data-label="Lignes">{arrivage.total_lignes}</td>
+                    <td data-label="QTT">{arrivage.total_quantite}</td>
+                    <td data-label="Valeur achat">{money(purchaseValue)}</td>
+                    <td data-label="Valeur vente">{money(saleValue)}</td>
+                    <td data-label="Enregistre le">{dateLabel(arrivage.created_at)}</td>
+                    <td data-label="Details">
+                      {isExpanded ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr className="expanded-row">
+                      <td colSpan={8} className="expanded-sale-cell">
+                        <div className="ticket-lines">
+                          {arrivage.lignes.map((line, index) => (
+                            <div className="ticket-line" key={`${arrivage.id}-${line.produit_id}-${index}`}>
+                              <span>
+                                {line.nom} ({line.type} / {line.categorie}) x {line.quantite_ajoutee}
+                                {line.is_partner ? ` - partenaire ${line.partner_name || ''}` : ''}
+                                {` - stock ${line.stock_avant} -> ${line.stock_apres}`}
+                              </span>
+                              <strong>
+                                PA {money(line.cout_achat)} | PV {money(line.prix_vente)} | Total {money(Number(line.quantite_ajoutee) * Number(line.prix_vente))}
+                              </strong>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={8} className="empty-cell">
+                  Aucun arrivage pour ce mois.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <PaginationControls {...controls} />
+    </>
+  )
+}
+
+function isMonthMatch(value: string | null | undefined, month: string) {
+  if (!value) return false
+  const directMatch = value.slice(0, 7)
+  if (/^\d{4}-\d{2}$/.test(directMatch)) {
+    return directMatch === month
+  }
+
+  const parsed = new Date(value)
+  if (!Number.isNaN(parsed.getTime())) {
+    const parsedMonth = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`
+    return parsedMonth === month
+  }
+
+  return false
+}
+
+function saleDateValue(vente: Vente) {
+  if (vente.date_vente) return vente.date_vente
+
+  const withCreatedAt = vente as Vente & { created_at?: string; createdAt?: string }
+  return withCreatedAt.created_at ?? withCreatedAt.createdAt ?? null
+}
+
+function buildStockMovements({
+  sales,
+  transfers,
+  arrivals,
+  productsById,
+}: {
+  sales: Vente[]
+  transfers: Transfert[]
+  arrivals: Arrivage[]
+  productsById: Map<number, Produit>
+}) {
+  const rows: StockMovementRow[] = []
+
+  for (const arrivage of arrivals) {
+    for (let index = 0; index < arrivage.lignes.length; index += 1) {
+      const line = arrivage.lignes[index]
+      rows.push({
+        id: `arrival-${arrivage.id}-${index}-${line.produit_id}`,
+        date: arrivage.date_arrivage || arrivage.created_at,
+        type: 'ACHAT',
+        sens: 'ENTREE',
+        produit: line.nom || `Produit #${line.produit_id}`,
+        quantite: Number(line.quantite_ajoutee) || 0,
+        valeur: (Number(line.quantite_ajoutee) || 0) * (Number(line.cout_achat) || 0),
+        detail: `Arrivage #${arrivage.id}`,
+      })
+    }
+  }
+
+  for (const vente of sales) {
+    const details = vente.details ?? []
+    for (let index = 0; index < details.length; index += 1) {
+      const detail = details[index]
+      const produit = productsById.get(detail.produit_id)
+      rows.push({
+        id: `sale-${vente.id}-${index}-${detail.produit_id}`,
+        date: saleDateValue(vente) || '',
+        type: 'VENTE',
+        sens: 'SORTIE',
+        produit: produit?.nom ?? `Produit #${detail.produit_id}`,
+        quantite: Number(detail.quantite) || 0,
+        valeur: (Number(detail.quantite) || 0) * (Number(detail.prix_unitaire) || 0),
+        detail: `Ticket #${vente.id} - ${vente.client}`,
+      })
+    }
+  }
+
+  for (const transfert of transfers) {
+    const isRefused = transfert.statut === 'REFUSE'
+    rows.push({
+      id: `transfer-${transfert.id}`,
+      date: transfert.created_at,
+      type: 'TRANSFERT',
+      sens: isRefused ? 'ENTREE' : 'SORTIE',
+      produit: transfert.produit?.nom ?? productsById.get(transfert.produit_id)?.nom ?? `Produit #${transfert.produit_id}`,
+      quantite: Number(transfert.quantite) || 0,
+      valeur: (Number(transfert.quantite) || 0) * (Number(transfert.prix_unitaire) || 0),
+      detail: `${transfert.point_vente} (${transfert.statut})`,
+    })
+  }
+
+  return rows.sort((a, b) => {
+    const aTime = a.date ? new Date(a.date).getTime() : 0
+    const bTime = b.date ? new Date(b.date).getTime() : 0
+    return bTime - aTime
+  })
+}
+
+function buildGeneralCashMovements({
+  entries,
+  transfers,
+  productsById,
+}: {
+  entries: AccountingEntry[]
+  transfers: Transfert[]
+  productsById: Map<number, Produit>
+}) {
+  const rows: CashMovementRow[] = entries.map((entry) => {
+    const amount = Number(entry.amount) || 0
+    return {
+      id: `entry-${entry.id}`,
+      date: entry.created_at,
+      operation: accountingOperationLabel(entry),
+      canal: entry.account === 'CAISSE' ? 'Caisse' : entry.account === 'COFFRE' ? 'Coffre' : String(entry.account),
+      motif: entry.motif || '-',
+      debit: amount > 0 ? amount : 0,
+      credit: amount < 0 ? Math.abs(amount) : 0,
+      source: 'COMPTA',
+      countInTotals: true,
+    }
+  })
+
+  for (const transfert of transfers) {
+    const relatedAccountingEntry = entries.some(
+      (entry) =>
+        Number(entry.reference_id ?? 0) === transfert.id &&
+        String(entry.reference_type ?? '')
+          .toLowerCase()
+          .includes('transfert'),
+    )
+    const total = (Number(transfert.quantite) || 0) * (Number(transfert.prix_unitaire) || 0)
+    const debit = transfert.statut === 'PAYE' ? total : 0
+
+    rows.push({
+      id: `tiers-${transfert.id}`,
+      date: transfert.created_at,
+      operation: 'Transfert vers tiers',
+      canal: 'Tiers',
+      motif: `${transfert.point_vente} (${transfert.statut}) - ${
+        transfert.produit?.nom ?? productsById.get(transfert.produit_id)?.nom ?? `Produit #${transfert.produit_id}`
+      }`,
+      debit,
+      credit: 0,
+      source: 'TIERS',
+      countInTotals: !relatedAccountingEntry && debit > 0,
+    })
+  }
+
+  return rows.sort((a, b) => {
+    const aTime = a.date ? new Date(a.date).getTime() : 0
+    const bTime = b.date ? new Date(b.date).getTime() : 0
+    return bTime - aTime
+  })
+}
+
+function accountingOperationLabel(entry: AccountingEntry) {
+  if (entry.entry_type === 'TRANSFER_OUT') {
+    if (entry.account === 'CAISSE') return 'Transfert interne Caisse -> Coffre'
+    if (entry.account === 'COFFRE') return 'Transfert interne Coffre -> Caisse'
+    return 'Transfert interne sortant'
+  }
+
+  if (entry.entry_type === 'TRANSFER_IN') {
+    if (entry.account === 'COFFRE') return 'Transfert interne Caisse -> Coffre'
+    if (entry.account === 'CAISSE') return 'Transfert interne Coffre -> Caisse'
+    return 'Transfert interne entrant'
+  }
+
+  return entryTypeLabel(entry.entry_type)
+}
+
 function entryTypeLabel(value: string) {
   const labels: Record<string, string> = {
     MANUAL_IN: 'Ajout manuel',
@@ -475,69 +995,213 @@ function entryTypeLabel(value: string) {
   return labels[value] ?? value
 }
 
-function printInventory(inventory: AccountingInventory) {
-  const popup = window.open('', 'inventaire', 'width=920,height=720')
+function printInventoryGeneralReport({
+  month,
+  inventory,
+  cashMovements,
+  cashTotals,
+  stockMovements,
+  activeProducts,
+  activeProductsTotals,
+  arrivals,
+  arrivalsTotals,
+}: {
+  month: string
+  inventory: AccountingInventory | null
+  cashMovements: CashMovementRow[]
+  cashTotals: { debit: number; credit: number }
+  stockMovements: StockMovementRow[]
+  activeProducts: Produit[]
+  activeProductsTotals: { quantity: number; purchase: number; sale: number }
+  arrivals: Arrivage[]
+  arrivalsTotals: { lines: number; quantity: number; purchase: number; sale: number }
+}) {
+  const popup = window.open('', 'inventaire-general', 'width=1200,height=820')
   if (!popup) return
 
   popup.document.write(`
     <html>
       <head>
-        <title>Inventaire ${escapeHtml(inventory.month)}</title>
+        <title>Inventaire general ${escapeHtml(month)}</title>
         <style>
           body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
           h1 { margin: 0 0 4px; font-size: 22px; }
           h2 { margin: 18px 0 8px; font-size: 15px; }
-          .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
-          .box { border: 1px solid #bbb; padding: 8px; }
-          .box span { display: block; color: #555; font-size: 12px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
-          th, td { border: 1px solid #bbb; padding: 7px; text-align: left; }
+          .subtitle { color: #555; margin-bottom: 10px; }
+          .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 14px; }
+          .box { border: 1px solid #bbb; padding: 8px; border-radius: 6px; }
+          .box span { display: block; color: #555; font-size: 12px; margin-bottom: 4px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+          th, td { border: 1px solid #bbb; padding: 7px; text-align: left; vertical-align: top; }
           th { background: #f2f2f2; }
           .positive { color: #087443; font-weight: bold; }
           .negative { color: #b42318; font-weight: bold; }
+          .muted { color: #666; }
         </style>
       </head>
       <body>
         <h1>${escapeHtml(STORE_NAME)}</h1>
-        <div>Inventaire comptable</div>
-        <div>Mois: ${escapeHtml(inventory.month)}</div>
-        <h2>Avant le mois</h2>
+        <div class="subtitle">Inventaire general - Mois ${escapeHtml(month)}</div>
         <div class="summary">
-          <div class="box"><span>Caisse</span><strong>${money(inventory.opening.caisse)}</strong></div>
-          <div class="box"><span>Coffre</span><strong>${money(inventory.opening.coffre)}</strong></div>
-          <div class="box"><span>Total</span><strong>${money(inventory.opening.total)}</strong></div>
+          <div class="box"><span>Caisse avant mois</span><strong>${money(inventory?.opening.caisse ?? 0)}</strong></div>
+          <div class="box"><span>Coffre avant mois</span><strong>${money(inventory?.opening.coffre ?? 0)}</strong></div>
+          <div class="box"><span>Caisse actuelle</span><strong>${money(inventory?.closing.caisse ?? 0)}</strong></div>
+          <div class="box"><span>Coffre actuel</span><strong>${money(inventory?.closing.coffre ?? 0)}</strong></div>
         </div>
-        <h2>Apres le mois</h2>
+
+        <h2>Mouvements comptables du mois (debit / credit)</h2>
         <div class="summary">
-          <div class="box"><span>Caisse</span><strong>${money(inventory.closing.caisse)}</strong></div>
-          <div class="box"><span>Coffre</span><strong>${money(inventory.closing.coffre)}</strong></div>
-          <div class="box"><span>Total</span><strong>${money(inventory.closing.total)}</strong></div>
-        </div>
-        <div class="summary">
-          <div class="box"><span>Total entree</span><strong>${money(inventory.total_in)}</strong></div>
-          <div class="box"><span>Total sortie</span><strong>${money(inventory.total_out)}</strong></div>
-          <div class="box"><span>Mouvements</span><strong>${inventory.entries.length}</strong></div>
+          <div class="box"><span>Debit total</span><strong class="positive">${money(cashTotals.debit)}</strong></div>
+          <div class="box"><span>Credit total</span><strong class="negative">${money(cashTotals.credit)}</strong></div>
+          <div class="box"><span>Lignes</span><strong>${cashMovements.length}</strong></div>
+          <div class="box"><span>Transferts vers tiers</span><strong>${cashMovements.filter((row) => row.source === 'TIERS').length}</strong></div>
         </div>
         <table>
           <thead>
             <tr>
               <th>Date</th>
-              <th>Compte</th>
-              <th>Type</th>
+              <th>Operation</th>
+              <th>Canal</th>
               <th>Motif</th>
-              <th>Montant</th>
+              <th>Debit</th>
+              <th>Credit</th>
             </tr>
           </thead>
           <tbody>
-            ${inventory.entries
+            ${cashMovements
               .map(
-                (entry) => `
+                (row) => `
                   <tr>
-                    <td>${dateLabel(entry.created_at)}</td>
-                    <td>${entry.account === 'CAISSE' ? 'Caisse' : 'Coffre'}</td>
-                    <td>${entryTypeLabel(entry.entry_type)}</td>
-                    <td>${escapeHtml(entry.motif)}</td>
-                    <td class="${Number(entry.amount) < 0 ? 'negative' : 'positive'}">${money(entry.amount)}</td>
+                    <td>${dateLabel(row.date)}</td>
+                    <td>${escapeHtml(row.operation)}</td>
+                    <td>${escapeHtml(row.canal)}</td>
+                    <td>${escapeHtml(row.motif)}</td>
+                    <td class="${row.debit > 0 ? 'positive' : 'muted'}">${row.debit > 0 ? money(row.debit) : '-'}</td>
+                    <td class="${row.credit > 0 ? 'negative' : 'muted'}">${row.credit > 0 ? money(row.credit) : '-'}</td>
+                  </tr>
+                `,
+              )
+              .join('')}
+          </tbody>
+        </table>
+
+        <h2>Produits actifs et valorisation</h2>
+        <div class="summary">
+          <div class="box"><span>Produits actifs</span><strong>${activeProducts.length}</strong></div>
+          <div class="box"><span>Quantite totale</span><strong>${activeProductsTotals.quantity}</strong></div>
+          <div class="box"><span>Valeur achat</span><strong>${money(activeProductsTotals.purchase)}</strong></div>
+          <div class="box"><span>Valeur vente</span><strong>${money(activeProductsTotals.sale)}</strong></div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Produit</th>
+              <th>Type / Categorie</th>
+              <th>QTT</th>
+              <th>Cout unitaire</th>
+              <th>Prix vente</th>
+              <th>Valeur achat</th>
+              <th>Valeur vente</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${activeProducts
+              .map(
+                (produit) => `
+                  <tr>
+                    <td>${escapeHtml(produit.nom)}</td>
+                    <td>${escapeHtml(`${produit.type} / ${produit.categorie}`)}</td>
+                    <td>${Number(produit.quantite) || 0}</td>
+                    <td>${money(produit.cout_achat)}</td>
+                    <td>${money(produit.prix_vente)}</td>
+                    <td>${money((Number(produit.quantite) || 0) * (Number(produit.cout_achat) || 0))}</td>
+                    <td>${money((Number(produit.quantite) || 0) * (Number(produit.prix_vente) || 0))}</td>
+                  </tr>
+                `,
+              )
+              .join('')}
+          </tbody>
+        </table>
+
+        <h2>Liste des arrivages</h2>
+        <div class="summary">
+          <div class="box"><span>Arrivages</span><strong>${arrivals.length}</strong></div>
+          <div class="box"><span>Lignes</span><strong>${arrivalsTotals.lines}</strong></div>
+          <div class="box"><span>QTT</span><strong>${arrivalsTotals.quantity}</strong></div>
+          <div class="box"><span>Valeur achat / vente</span><strong>${money(arrivalsTotals.purchase)} / ${money(arrivalsTotals.sale)}</strong></div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Date arrivage</th>
+              <th>Commentaire</th>
+              <th>Lignes</th>
+              <th>QTT</th>
+              <th>Valeur achat</th>
+              <th>Valeur vente</th>
+              <th>Detail lignes</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${arrivals
+              .map((arrivage) => {
+                const purchase = arrivage.lignes.reduce(
+                  (total, line) => total + Number(line.quantite_ajoutee) * Number(line.cout_achat),
+                  0,
+                )
+                const sale = arrivage.lignes.reduce(
+                  (total, line) => total + Number(line.quantite_ajoutee) * Number(line.prix_vente),
+                  0,
+                )
+                return `
+                  <tr>
+                    <td>${dateLabel(arrivage.date_arrivage)}</td>
+                    <td>${escapeHtml(arrivage.commentaire || '-')}</td>
+                    <td>${arrivage.total_lignes}</td>
+                    <td>${arrivage.total_quantite}</td>
+                    <td>${money(purchase)}</td>
+                    <td>${money(sale)}</td>
+                    <td>${arrivage.lignes
+                      .map((line) => {
+                        const label = `${line.nom} (${line.type} / ${line.categorie}) x ${line.quantite_ajoutee}${
+                          line.is_partner ? ` - partenaire ${line.partner_name || ''}` : ''
+                        } - stock ${line.stock_avant} -> ${line.stock_apres}`
+                        const value = `PA ${money(line.cout_achat)} | PV ${money(line.prix_vente)} | Total ${money(
+                          Number(line.quantite_ajoutee) * Number(line.prix_vente),
+                        )}`
+                        return `<div>${escapeHtml(label)}<br/><strong>${escapeHtml(value)}</strong></div>`
+                      })
+                      .join('<hr/>')}</td>
+                  </tr>
+                `
+              })
+              .join('')}
+          </tbody>
+        </table>
+
+        <h2 class="muted">Mouvements stock (trace)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Sens</th>
+              <th>Produit</th>
+              <th>QTT</th>
+              <th>Valeur</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${stockMovements
+              .map(
+                (row) => `
+                  <tr>
+                    <td>${dateLabel(row.date)}</td>
+                    <td>${escapeHtml(row.type)}</td>
+                    <td>${escapeHtml(row.sens)}</td>
+                    <td>${escapeHtml(row.produit)}</td>
+                    <td>${row.quantite}</td>
+                    <td>${money(row.valeur)}</td>
                   </tr>
                 `,
               )

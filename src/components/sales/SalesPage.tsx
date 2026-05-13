@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronUp, Pencil, Plus, Printer, ReceiptText, Search, Send, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Pencil, Plus, Printer, ReceiptText, Save, Search, Send, Trash2, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Fragment, useMemo, useState } from 'react'
 import { api } from '../../api'
@@ -29,12 +29,23 @@ type TransferLine = {
   prix_unitaire: number
 }
 
+type TransferEditForm = {
+  id: number
+  produit_id: number
+  quantite: number
+  prix_unitaire: number
+  point_vente: string
+  commentaire: string
+}
+
 type SalesPageProps = {
   section: SaleSection
   produits: Produit[]
   ventes: Vente[]
   transferts: Transfert[]
   canManageSales: boolean
+  canManageTransferActions: boolean
+  canManageTransferRecords: boolean
   token: string
   onRefresh: () => Promise<void>
 }
@@ -45,6 +56,8 @@ export function SalesPage({
   ventes,
   transferts,
   canManageSales,
+  canManageTransferActions,
+  canManageTransferRecords,
   token,
   onRefresh,
 }: SalesPageProps) {
@@ -75,6 +88,7 @@ export function SalesPage({
   const [listProductId, setListProductId] = useState('')
   const [saleSearch, setSaleSearch] = useState('')
   const [transferSearch, setTransferSearch] = useState('')
+  const [editingTransfer, setEditingTransfer] = useState<TransferEditForm | null>(null)
   const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null)
   const [appliedListFilters, setAppliedListFilters] = useState({
     type: '',
@@ -170,6 +184,7 @@ export function SalesPage({
 
   const selectedProduct = produits.find((produit) => produit.id === Number(productId))
   const selectedEditProduct = produits.find((produit) => produit.id === Number(editProductId))
+  const productsById = useMemo(() => new Map(produits.map((produit) => [produit.id, produit])), [produits])
   const { pageItems: paginatedVentes, controls: ventePagination } = usePaginatedItems(filteredVentes)
   const { pageItems: paginatedTransferts, controls: transfertPagination } = usePaginatedItems(filteredTransferts)
   const selectedProductAvailable = selectedProduct
@@ -213,6 +228,7 @@ export function SalesPage({
   const total = Math.max(0, subtotal - appliedCartDiscount)
   const currentTransferLineTotal = selectedProduct ? roundAmount(quantity * price) : 0
   const transferTotal = transferLines.reduce((total, line) => total + transferLineTotal(line), 0)
+  const currentTransferProfitLabel = selectedProduct ? profitLabel(selectedProduct.cout_achat, price) : ''
 
   function handleTypeChange(value: string) {
     setType(value)
@@ -431,6 +447,52 @@ export function SalesPage({
       await onRefresh()
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Mise a jour transfert impossible')
+    }
+  }
+
+  function openEditTransfer(transfert: Transfert) {
+    setEditingTransfer({
+      id: transfert.id,
+      produit_id: transfert.produit_id,
+      quantite: transfert.quantite,
+      prix_unitaire: Number(transfert.prix_unitaire),
+      point_vente: transfert.point_vente,
+      commentaire: transfert.commentaire ?? '',
+    })
+  }
+
+  async function submitEditTransfer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editingTransfer) return
+
+    try {
+      await api.updateTransfert(token, editingTransfer.id, {
+        quantite: editingTransfer.quantite,
+        prix_unitaire: editingTransfer.prix_unitaire,
+        point_vente: editingTransfer.point_vente.trim(),
+        commentaire: editingTransfer.commentaire.trim() || null,
+      })
+      setEditingTransfer(null)
+      notifySuccess('Transfert modifie.')
+      await onRefresh()
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Modification transfert impossible')
+    }
+  }
+
+  async function deleteTransfer(transfertId: number) {
+    const confirmed = await confirmAction(
+      'Supprimer ce transfert ?',
+      'Le stock transfere sera restaure.',
+    )
+    if (!confirmed) return
+
+    try {
+      await api.deleteTransfert(token, transfertId)
+      notifySuccess('Transfert supprime.')
+      await onRefresh()
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Suppression transfert impossible')
     }
   }
 
@@ -824,6 +886,11 @@ export function SalesPage({
                   min={0.01}
                   onValueChange={setPrice}
                 />
+                {selectedProduct && (
+                  <span className="profit-note">
+                    PA: {money(selectedProduct.cout_achat)} - {currentTransferProfitLabel}
+                  </span>
+                )}
               </label>
               <div className="transfer-total-chip">
                 <span>Total produit</span>
@@ -919,48 +986,78 @@ export function SalesPage({
                 <tr>
                   <th>Produit</th>
                   <th>Point de vente</th>
-                  <th>Quantite</th>
+                  <th className="transfer-qtt-col">QTT</th>
                   <th>Prix unitaire</th>
+                  <th>Benefice</th>
                   <th>Statut</th>
                   <th>Date</th>
-                  {canManageSales && <th>Action</th>}
+                  {canManageTransferActions && <th className="transfer-actions-col">Action</th>}
                 </tr>
               </thead>
               <tbody>
-                {paginatedTransferts.map((transfert) => (
-                  <tr key={transfert.id}>
-                    <td data-label="Produit">
-                      <strong>{transfert.produit?.nom ?? `Produit #${transfert.produit_id}`}</strong>
-                      <span>
-                        {transfert.produit?.type ?? '-'} / {transfert.produit?.categorie ?? '-'}
-                      </span>
-                    </td>
-                    <td data-label="Point de vente">{transfert.point_vente}</td>
-                    <td data-label="Quantite">{transfert.quantite}</td>
-                    <td data-label="Prix unitaire">{money(transfert.prix_unitaire)}</td>
-                    <td data-label="Statut">
-                      <span className={transfert.statut === 'PAYE' ? 'pill ok' : 'pill warn'}>
-                        {transferStatusLabel(transfert.statut)}
-                      </span>
-                    </td>
-                    <td data-label="Date">{dateLabel(transfert.created_at)}</td>
-                    {canManageSales && (
-                      <td data-label="Action">
-                        <select
-                          value={transfert.statut}
-                          onChange={(event) => void updateTransferStatus(transfert.id, event.target.value as 'NON_PAYE' | 'PAYE' | 'REFUSE')}
-                        >
-                          <option value="NON_PAYE">Non paye</option>
-                          <option value="PAYE">Paye</option>
-                          <option value="REFUSE">Refuser</option>
-                        </select>
+                {paginatedTransferts.map((transfert) => {
+                  const produit = productsById.get(transfert.produit_id)
+                  const coutAchat = Number(transfert.produit?.cout_achat ?? produit?.cout_achat ?? 0)
+                  const benefit = profitLabel(coutAchat, Number(transfert.prix_unitaire))
+
+                  return (
+                    <tr key={transfert.id}>
+                      <td data-label="Produit">
+                        <strong>{transfert.produit?.nom ?? `Produit #${transfert.produit_id}`}</strong>
+                        <span>
+                          {transfert.produit?.type ?? '-'} / {transfert.produit?.categorie ?? '-'}
+                        </span>
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td data-label="Point de vente">{transfert.point_vente}</td>
+                      <td className="transfer-qtt-col" data-label="QTT">{transfert.quantite}</td>
+                      <td data-label="Prix unitaire">{money(transfert.prix_unitaire)}</td>
+                      <td data-label="Benefice">{benefit}</td>
+                      <td data-label="Statut">
+                        <span className={transfert.statut === 'PAYE' ? 'pill ok' : 'pill warn'}>
+                          {transferStatusLabel(transfert.statut)}
+                        </span>
+                      </td>
+                      <td data-label="Date">{dateLabel(transfert.created_at)}</td>
+                      {canManageTransferActions && (
+                        <td className="transfer-actions-col" data-label="Action">
+                          <div className="icon-actions">
+                            <select
+                              value={transfert.statut}
+                              onChange={(event) => void updateTransferStatus(transfert.id, event.target.value as 'NON_PAYE' | 'PAYE' | 'REFUSE')}
+                            >
+                              <option value="NON_PAYE">Non paye</option>
+                              <option value="PAYE">Paye</option>
+                              <option value="REFUSE">Refuser</option>
+                            </select>
+                            {canManageTransferRecords && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="icon-button"
+                                  title="Modifier transfert"
+                                  onClick={() => openEditTransfer(transfert)}
+                                >
+                                  <Pencil size={16} aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="icon-button danger-icon"
+                                  title="Supprimer transfert"
+                                  onClick={() => void deleteTransfer(transfert.id)}
+                                >
+                                  <Trash2 size={16} aria-hidden="true" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
                 {filteredTransferts.length === 0 && (
                   <tr>
-                    <td colSpan={canManageSales ? 7 : 6} className="empty-cell">
+                    <td colSpan={canManageTransferActions ? 8 : 7} className="empty-cell">
                       Aucun transfert enregistre.
                     </td>
                   </tr>
@@ -970,6 +1067,7 @@ export function SalesPage({
           </div>
           <PaginationControls {...transfertPagination} />
         </article>
+        {editingTransfer && renderTransferEditModal()}
       </section>
     )
   }
@@ -1141,6 +1239,78 @@ export function SalesPage({
       </article>
     </section>
   )
+
+  function renderTransferEditModal() {
+    if (!editingTransfer) return null
+
+    const produit = productsById.get(editingTransfer.produit_id)
+    const benefit = profitLabel(Number(produit?.cout_achat ?? 0), editingTransfer.prix_unitaire)
+
+    return (
+      <Modal title={`Modifier transfert #${editingTransfer.id}`} onClose={() => setEditingTransfer(null)}>
+        <form className="modal-form" onSubmit={submitEditTransfer}>
+          <label>
+            Produit
+            <input value={produit?.nom ?? `Produit #${editingTransfer.produit_id}`} readOnly />
+          </label>
+          <label>
+            Quantite
+            <input
+              type="number"
+              min="1"
+              value={editingTransfer.quantite}
+              onChange={(event) =>
+                setEditingTransfer((current) =>
+                  current ? { ...current, quantite: Number(event.target.value) } : current,
+                )
+              }
+              required
+            />
+          </label>
+          <label>
+            Prix unitaire
+            <FormattedNumberInput
+              value={editingTransfer.prix_unitaire}
+              min={0.01}
+              onValueChange={(prix_unitaire) =>
+                setEditingTransfer((current) => (current ? { ...current, prix_unitaire } : current))
+              }
+            />
+            <span className="profit-note">
+              PA: {money(produit?.cout_achat ?? 0)} - {benefit}
+            </span>
+          </label>
+          <label>
+            Point de vente
+            <input
+              value={editingTransfer.point_vente}
+              onChange={(event) =>
+                setEditingTransfer((current) =>
+                  current ? { ...current, point_vente: event.target.value } : current,
+                )
+              }
+              required
+            />
+          </label>
+          <label>
+            Commentaire
+            <input
+              value={editingTransfer.commentaire}
+              onChange={(event) =>
+                setEditingTransfer((current) =>
+                  current ? { ...current, commentaire: event.target.value } : current,
+                )
+              }
+            />
+          </label>
+          <button className="primary-button" type="submit">
+            <Save size={18} aria-hidden="true" />
+            Enregistrer
+          </button>
+        </form>
+      </Modal>
+    )
+  }
 
   function renderEditModal() {
     if (!editingSale) return null
@@ -1413,6 +1583,11 @@ function transferStatusLabel(value?: string) {
   if (value === 'PAYE') return 'Paye'
   if (value === 'REFUSE') return 'Refuse'
   return 'Non paye'
+}
+
+function profitLabel(cout: number, prix: number) {
+  if (!cout) return '0% benefice'
+  return `${(((prix - cout) / cout) * 100).toFixed(1)}% benefice`
 }
 
 function printReceipt(lines: CartLine[], client: string, discount: number, comment: string) {

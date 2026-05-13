@@ -718,6 +718,19 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.transfer-history-table .transfer-qtt-col {
+  width: 68px;
+  white-space: nowrap;
+}
+
+.transfer-history-table .transfer-actions-col {
+  width: 240px;
+}
+
+.transfer-history-table .transfer-actions-col .icon-actions {
+  flex-wrap: nowrap;
+}
+
 .transfer-history-search {
   width: min(420px, 100%);
   margin-top: 14px;
@@ -760,6 +773,20 @@ button:disabled {
 
 .table-pagination-cell .pagination-controls {
   margin-top: 0;
+}
+
+.arrival-history-table {
+  table-layout: fixed;
+}
+
+.arrival-history-table .arrival-qtt-col {
+  width: 72px;
+  white-space: nowrap;
+}
+
+.arrival-history-table .arrival-actions-col {
+  width: 104px;
+  white-space: nowrap;
 }
 
 .pagination-buttons {
@@ -867,6 +894,16 @@ td span {
 .pill.warn {
   color: #842317;
   background: #ffe8e2;
+}
+
+.pill.alert {
+  color: #6d4d00;
+  background: #fff3c4;
+}
+
+.pill.danger {
+  color: #842317;
+  background: #ffe1dc;
 }
 
 .pill.info {

@@ -270,6 +270,7 @@ export function Sidebar({
               <ShieldCheck size={18} aria-hidden="true" />
               <span className="nav-item-label">
                 Espace admin
+                {pendingApprovalCount > 0 && <span className="notification-badge">{`${pendingApprovalCount}!`}</span>}
                 {unreadNotificationCount > 0 && <span className="notification-badge">{unreadNotificationCount}</span>}
               </span>
             </button>

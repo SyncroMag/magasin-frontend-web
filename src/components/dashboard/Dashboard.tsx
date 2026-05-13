@@ -1,5 +1,5 @@
 import { Boxes, Menu, RefreshCw } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../api'
 import { emptyProduct, STORE_NAME } from '../../constants'
 import { dateSearchValues } from '../../utils/format'
@@ -10,6 +10,7 @@ import { AdminNotificationsPage } from '../admin/AdminNotificationsPage'
 import { OutilsPage } from '../admin/OutilsPage'
 import { PersonnelPage } from '../admin/PersonnelPage'
 import { ApprovalsPage } from '../approvals/ApprovalsPage'
+import type { ApprovalFilter } from '../approvals/ApprovalsPage'
 import { InvoiceUploadsPage } from '../invoices/InvoiceUploadsPage'
 import { Sidebar } from '../layout/Sidebar'
 import { OverviewPage } from '../overview/OverviewPage'
@@ -72,6 +73,23 @@ const viewTitles: Record<DashboardView, { eyebrow: string; title: string }> = {
   users: { eyebrow: 'Administration', title: 'Utilisateurs' },
 }
 
+function playApprovalNotificationSound() {
+  try {
+    const context = new window.AudioContext()
+    const oscillator = context.createOscillator()
+    const gain = context.createGain()
+    oscillator.type = 'sine'
+    oscillator.frequency.value = 880
+    gain.gain.value = 0.06
+    oscillator.connect(gain)
+    gain.connect(context.destination)
+    oscillator.start()
+    oscillator.stop(context.currentTime + 0.18)
+  } catch {
+    // ignore
+  }
+}
+
 export function Dashboard({ session, onLogout }: DashboardProps) {
   const [activeView, setActiveView] = useState<DashboardView>(() => viewFromPath(window.location.pathname))
   const [produits, setProduits] = useState<Produit[]>([])
@@ -79,6 +97,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
   const [transferts, setTransferts] = useState<Transfert[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [approvals, setApprovals] = useState<Approval[]>([])
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0)
   const [adminNotifications, setAdminNotifications] = useState<AdminNotification[]>([])
   const [accountingSummary, setAccountingSummary] = useState<AccountingSummary | null>(null)
   const [accountingEntries, setAccountingEntries] = useState<AccountingEntry[]>([])
@@ -94,16 +113,20 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
   const [productForm, setProductForm] = useState<ProduitCreate>(emptyProduct)
   const [userForm, setUserForm] = useState({ username: '', password: '', role: 'VENDEUR' as Role })
   const [reviewComments, setReviewComments] = useState<Record<number, string>>({})
+  const [approvalFilter, setApprovalFilter] = useState<ApprovalFilter>('PENDING')
   const [stockTypeFilter, setStockTypeFilter] = useState('')
   const [stockCategoryFilter, setStockCategoryFilter] = useState('')
   const [personnelMonth, setPersonnelMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [isSidebarOpen, setSidebarOpen] = useState(false)
+  const previousPendingApprovalCount = useRef(0)
 
   const canManageStock = session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'
   const canManageUsers = session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'
-  const canCreateAdmin = session.role === 'SUPER_ADMIN'
+  const canCreateAdmin = session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'
   const canReviewApprovals = session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'
+  const canProcessApprovals = session.role === 'ADMIN'
   const canViewFinancialStats = session.role !== 'VENDEUR'
+  const canAccessTransfers = session.role === 'VENDEUR' || session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'
 
   const lowStockProducts = useMemo(
     () => produits.filter((produit) => produit.quantite <= produit.seuil_alerte),
@@ -113,7 +136,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
     () => adminNotifications.filter((notification) => !notification.is_read).length,
     [adminNotifications],
   )
-  const pendingApprovalCount = useMemo(() => approvals.length, [approvals])
+  const pendingApprovalCount = pendingApprovalsCount
 
   const filteredProducts = useMemo(() => {
     const value = query.trim().toLowerCase()
@@ -151,6 +174,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
         dailySalesResult,
         transfersResult,
         approvalsResult,
+        pendingApprovalsResult,
         notificationsResult,
         accountingSummaryResult,
         accountingEntriesResult,
@@ -164,8 +188,11 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
         canViewFinancialStats ? api.benefice(token) : Promise.resolve(null),
         api.topProduits(token),
         canViewFinancialStats ? api.ventesParJour(token) : Promise.resolve([]),
-        canReviewApprovals ? api.transferts(token) : Promise.resolve([]),
-        canReviewApprovals ? api.approvals(token) : Promise.resolve([]),
+        canAccessTransfers ? api.transferts(token) : Promise.resolve([]),
+        canReviewApprovals
+          ? api.approvals(token, approvalFilter === 'ALL' ? { include_all: true } : { status: approvalFilter })
+          : Promise.resolve([]),
+        canReviewApprovals ? api.approvals(token, { status: 'PENDING' }) : Promise.resolve([]),
         canReviewApprovals ? api.adminNotifications(token) : Promise.resolve([]),
         canManageUsers ? api.accountingSummary(token) : Promise.resolve(null),
         canManageUsers ? api.accountingEntries(token) : Promise.resolve([]),
@@ -182,6 +209,10 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
       if (dailySalesResult.status === 'fulfilled') setVentesParJour(dailySalesResult.value)
       if (transfersResult.status === 'fulfilled') setTransferts(transfersResult.value)
       if (approvalsResult.status === 'fulfilled') setApprovals(approvalsResult.value)
+      if (pendingApprovalsResult.status === 'fulfilled') {
+        setPendingApprovalsCount(pendingApprovalsResult.value.length)
+        previousPendingApprovalCount.current = pendingApprovalsResult.value.length
+      }
       if (notificationsResult.status === 'fulfilled') setAdminNotifications(notificationsResult.value)
       if (accountingSummaryResult.status === 'fulfilled') setAccountingSummary(accountingSummaryResult.value)
       if (accountingEntriesResult.status === 'fulfilled') setAccountingEntries(accountingEntriesResult.value)
@@ -198,6 +229,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
         dailySalesResult,
         transfersResult,
         approvalsResult,
+        pendingApprovalsResult,
         notificationsResult,
         accountingSummaryResult,
         accountingEntriesResult,
@@ -230,7 +262,36 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
 
     return () => window.clearTimeout(timeoutId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.accessToken])
+  }, [session.accessToken, approvalFilter])
+
+  useEffect(() => {
+    if (!canReviewApprovals) return
+
+    const intervalId = window.setInterval(async () => {
+      try {
+        const token = session.accessToken
+        const [nextApprovals, nextPendingApprovals, nextNotifications] = await Promise.all([
+          api.approvals(token, approvalFilter === 'ALL' ? { include_all: true } : { status: approvalFilter }),
+          api.approvals(token, { status: 'PENDING' }),
+          api.adminNotifications(token),
+        ])
+
+        const nextPending = nextPendingApprovals.length
+        if (nextPending > previousPendingApprovalCount.current) {
+          playApprovalNotificationSound()
+          notifySuccess('Nouvelle demande d approbation recue.')
+        }
+        previousPendingApprovalCount.current = nextPending
+        setPendingApprovalsCount(nextPending)
+        setApprovals(nextApprovals)
+        setAdminNotifications(nextNotifications)
+      } catch {
+        // poll silencieux
+      }
+    }, 15000)
+
+    return () => window.clearInterval(intervalId)
+  }, [approvalFilter, canReviewApprovals, session.accessToken])
 
   useEffect(() => {
     if (window.location.pathname === '/dashboard' || window.location.pathname === '/gestion') {
@@ -365,6 +426,16 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
     }
   }
 
+  async function handleToggleProductActive(productId: number, isActive: boolean) {
+    try {
+      const result = await api.setProduitActive(session.accessToken, productId, isActive)
+      await showMutationResult(result, isActive ? 'Produit active.' : 'Produit desactive.')
+      await loadDashboard()
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Changement statut produit impossible')
+    }
+  }
+
   async function handleRenameType(oldType: string, nextType: string) {
     const type = nextType.trim()
     if (!type || oldType === type) return
@@ -482,17 +553,22 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
 
   async function handleReview(approval: Approval, approve: boolean) {
     try {
-      await api.reviewApproval(
+      const result = await api.reviewApproval(
         session.accessToken,
         approval.id,
         approve,
         reviewComments[approval.id],
       )
       if (approve) {
-        await importantAlert('Approbation acceptee', 'La demande a ete approuvee.', 'success')
+        if (result.status === 'APPROVED') {
+          await importantAlert('Approbation acceptee', 'La demande a ete approuvee.', 'success')
+        } else {
+          showSuccess(`Validation enregistree (${result.approval_count}/${result.required_approvals}).`)
+        }
       } else {
         showSuccess('Demande refusee.')
       }
+      setReviewComments((current) => ({ ...current, [approval.id]: '' }))
       await loadDashboard()
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Decision impossible')
@@ -736,6 +812,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
           onCategoryFilterChange={setStockCategoryFilter}
           onUpdateProduct={handleUpdateProduct}
           onDeleteProduct={handleDeleteProduct}
+          onToggleProductActive={handleToggleProductActive}
           onRenameType={handleRenameType}
           onDeleteType={handleDeleteType}
           onRenameCategory={handleRenameCategory}
@@ -755,6 +832,8 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
                 : 'create'
           }
           canManageSales={session.role === 'SUPER_ADMIN'}
+          canManageTransferActions={session.role === 'VENDEUR' || session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'}
+          canManageTransferRecords={session.role === 'SUPER_ADMIN'}
           token={session.accessToken}
           onRefresh={loadDashboard}
           produits={produits}
@@ -795,6 +874,9 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
           token={session.accessToken}
           summary={accountingSummary}
           entries={accountingEntries}
+          produits={produits}
+          ventes={ventes}
+          transferts={transferts}
           employes={employes}
           onManual={handleManualAccounting}
           onTransfer={handleTransferAccounting}
@@ -847,7 +929,11 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
       return (
         <ApprovalsPage
           approvals={approvals}
+          users={users}
+          filter={approvalFilter}
+          canReviewActions={canProcessApprovals}
           reviewComments={reviewComments}
+          onFilterChange={setApprovalFilter}
           onCommentChange={(approvalId, value) =>
             setReviewComments((current) => ({ ...current, [approvalId]: value }))
           }
@@ -862,7 +948,8 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
           users={users}
           userForm={userForm}
           canCreateAdmin={canCreateAdmin}
-          canEditUsers={session.role === 'SUPER_ADMIN'}
+          canAssignSuperAdmin={session.role === 'SUPER_ADMIN'}
+          canEditUsers={session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'}
           onUserFormChange={setUserForm}
           onCreateUser={handleCreateUser}
           onUpdateUser={handleUpdateUser}

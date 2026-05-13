@@ -16,6 +16,7 @@ type UsersPageProps = {
   users: User[]
   userForm: UserForm
   canCreateAdmin: boolean
+  canAssignSuperAdmin: boolean
   canEditUsers: boolean
   onUserFormChange: (value: UserForm) => void
   onCreateUser: (event: FormEvent<HTMLFormElement>) => void
@@ -27,6 +28,7 @@ export function UsersPage({
   users,
   userForm,
   canCreateAdmin,
+  canAssignSuperAdmin,
   canEditUsers,
   onUserFormChange,
   onCreateUser,
@@ -214,7 +216,7 @@ export function UsersPage({
               >
                 <option value="VENDEUR">VENDEUR</option>
                 <option value="ADMIN">ADMIN</option>
-                <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                {canAssignSuperAdmin && <option value="SUPER_ADMIN">SUPER_ADMIN</option>}
               </select>
             </label>
             <label className="check-row">

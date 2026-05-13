@@ -75,7 +75,7 @@ export type Transfert = {
   statut: 'NON_PAYE' | 'PAYE' | 'REFUSE' | string
   created_by: number
   created_at: string
-  produit?: Pick<Produit, 'id' | 'type' | 'categorie' | 'nom'> | null
+  produit?: Pick<Produit, 'id' | 'type' | 'categorie' | 'nom' | 'cout_achat'> | null
 }
 
 export type TransfertCreate = {
@@ -167,6 +167,8 @@ export type Approval = {
   status: ApprovalStatus
   requested_by: number
   reviewed_by?: number | null
+  first_reviewed_by?: number | null
+  second_reviewed_by?: number | null
   required_approvals: number
   approval_count: number
   comment?: string | null

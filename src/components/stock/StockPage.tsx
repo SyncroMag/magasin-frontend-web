@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronUp, Pencil, Plus, Save, Search, Send, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Pencil, Plus, Power, Save, Search, Send, Trash2, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api } from '../../api'
@@ -32,6 +32,7 @@ type StockPageProps = {
   onCategoryFilterChange: (value: string) => void
   onUpdateProduct: (productId: number, data: Partial<ProduitCreate>) => void
   onDeleteProduct: (productId: number) => void
+  onToggleProductActive: (productId: number, isActive: boolean) => Promise<void>
   onRenameType: (oldType: string, nextType: string) => void
   onDeleteType: (type: string) => void
   onRenameCategory: (oldCategory: string, nextCategory: string) => void
@@ -74,6 +75,7 @@ export function StockPage({
   onCategoryFilterChange,
   onUpdateProduct,
   onDeleteProduct,
+  onToggleProductActive,
   onRenameType,
   onDeleteType,
   onRenameCategory,
@@ -100,6 +102,7 @@ export function StockPage({
   const [expandedArrivalId, setExpandedArrivalId] = useState<number | null>(null)
   const [arrivalEditor, setArrivalEditor] = useState<ArrivalEditor | null>(null)
   const [isSubmittingArrival, setSubmittingArrival] = useState(false)
+  const [inactiveProducts, setInactiveProducts] = useState<Produit[]>([])
   const [stateForm, setStateForm] = useState({
     produit_id: '',
     quantite: 1,
@@ -288,6 +291,7 @@ export function StockPage({
   const { pageItems: paginatedArrivalHistory, controls: arrivalPagination } = usePaginatedItems(filteredArrivalHistory)
   const { pageItems: paginatedEtatsProduits, controls: statePagination } = usePaginatedItems(filteredEtatsProduits)
   const { pageItems: paginatedFilteredProducts, controls: productPagination } = usePaginatedItems(filteredProducts)
+  const { pageItems: paginatedInactiveProducts, controls: inactiveProductPagination } = usePaginatedItems(inactiveProducts)
 
   useEffect(() => {
     if (section !== 'states') return
@@ -302,6 +306,13 @@ export function StockPage({
     void loadArrivals()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section])
+
+  useEffect(() => {
+    if (section !== 'stock') return
+    if (!canManageStock) return
+    void loadInactiveProducts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section, canManageStock])
 
   async function loadEtatsProduits() {
     try {
@@ -318,6 +329,15 @@ export function StockPage({
       setArrivalHistory(result)
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Chargement arrivages impossible')
+    }
+  }
+
+  async function loadInactiveProducts() {
+    try {
+      const result = await api.produitsInactifs(token)
+      setInactiveProducts(result)
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Chargement produits inactifs impossible')
     }
   }
 
@@ -543,6 +563,21 @@ export function StockPage({
       await onRefresh()
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Suppression arrivage impossible')
+    }
+  }
+
+  async function toggleProductActive(produit: Produit, nextActive: boolean) {
+    const confirmed = await confirmAction(
+      nextActive ? 'Activer ce produit ?' : 'Desactiver ce produit ?',
+      nextActive ? 'Le produit redevient disponible dans le stock actif.' : 'Le produit sera retire du stock actif.',
+    )
+    if (!confirmed) return
+
+    try {
+      await onToggleProductActive(produit.id, nextActive)
+      await loadInactiveProducts()
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Changement statut produit impossible')
     }
   }
 
@@ -1009,21 +1044,21 @@ export function StockPage({
               />
             </span>
           </label>
-          {/* <span className="pill info">Valeur totale: {money(filteredArrivalValueTotal)}</span> */}
+          <span className="pill info">Valeur totale: {money(filteredArrivalValueTotal)}</span>
         </div>
 
         <div className="table-wrap">
-          <table>
+          <table className="arrival-history-table">
             <thead>
               <tr>
                 <th>Date arrivage</th>
                 <th>Commentaire</th>
                 <th>Lignes</th>
-                <th>Quantite totale</th>
+                <th className="arrival-qtt-col">QTT</th>
                 <th>Valeur</th>
                 <th>Enregistre le</th>
                 <th>Details</th>
-                {canDeleteStock && <th>Actions</th>}
+                {canDeleteStock && <th className="arrival-actions-col">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -1043,14 +1078,14 @@ export function StockPage({
                       <td data-label="Date arrivage">{dateLabel(arrivage.date_arrivage)}</td>
                       <td data-label="Commentaire">{arrivage.commentaire || '-'}</td>
                       <td data-label="Lignes">{arrivage.total_lignes}</td>
-                      <td data-label="Quantite totale">{arrivage.total_quantite}</td>
+                      <td className="arrival-qtt-col" data-label="QTT">{arrivage.total_quantite}</td>
                       <td data-label="Valeur">{money(arrivalValue)}</td>
                       <td data-label="Enregistre le">{dateLabel(arrivage.created_at)}</td>
                       <td data-label="Details">
                         {isExpanded ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
                       </td>
                       {canDeleteStock && (
-                        <td data-label="Actions">
+                        <td className="arrival-actions-col" data-label="Actions">
                           <div className="icon-actions">
                             <button
                               type="button"
@@ -1178,7 +1213,6 @@ export function StockPage({
               <th>Prix vente (Ar)</th>
               <th>Marge</th>
               <th>Partenaire</th>
-              <th>Date update</th>
               <th>Etat</th>
               {showStockActions && <th>Actions</th>}
             </tr>
@@ -1203,9 +1237,8 @@ export function StockPage({
                     '-'
                   )}
                 </td>
-                <td data-label="Date update">{dateLabel(produit.updated_at)}</td>
                 <td data-label="Etat">
-                  <span className={produit.quantite <= produit.seuil_alerte ? 'pill warn' : 'pill ok'}>
+                  <span className={produit.quantite <= produit.seuil_alerte ? 'pill alert' : 'pill ok'}>
                     {produit.quantite <= produit.seuil_alerte ? 'Alerte' : 'OK'}
                   </span>
                 </td>
@@ -1214,18 +1247,81 @@ export function StockPage({
                     <IconActions
                       canEdit={canManageStock}
                       canDelete={canDeleteStock}
+                      canToggleActive={canManageStock}
+                      isActive={true}
                       onEdit={() => openEditProduct(produit)}
                       onDelete={() => onDeleteProduct(produit.id)}
+                      onToggleActive={() => void toggleProductActive(produit, false)}
                     />
                   </td>
                 )}
               </tr>
             ))}
-            {filteredProducts.length === 0 && <EmptyRow colSpan={showStockActions ? 11 : 10} />}
+            {filteredProducts.length === 0 && <EmptyRow colSpan={showStockActions ? 10 : 9} />}
           </tbody>
         </table>
       </div>
       <PaginationControls {...productPagination} />
+
+      {canManageStock && (
+        <article className="panel view-stack">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Stock</p>
+              <h2>Produits inactifs</h2>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Produit</th>
+                  <th>Type</th>
+                  <th>Categorie</th>
+                  <th>Partenaire</th>
+                  <th>Etat</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedInactiveProducts.map((produit) => (
+                  <tr key={produit.id}>
+                    <td data-label="Produit">
+                      <strong>{produit.nom}</strong>
+                      <span>{produit.commentaire || 'Sans commentaire'}</span>
+                    </td>
+                    <td data-label="Type">{produit.type}</td>
+                    <td data-label="Categorie">{produit.categorie}</td>
+                    <td data-label="Partenaire">
+                      {produit.is_partner ? (
+                        <span className="pill info">{produit.partner_name || 'Partenaire'}</span>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td data-label="Etat">
+                      <span className="pill danger">Desactive</span>
+                    </td>
+                    <td data-label="Actions">
+                      <IconActions
+                        canEdit={false}
+                        canDelete={false}
+                        canToggleActive={true}
+                        isActive={false}
+                        onEdit={() => undefined}
+                        onDelete={() => undefined}
+                        onToggleActive={() => void toggleProductActive(produit, true)}
+                      />
+                    </td>
+                  </tr>
+                ))}
+                {inactiveProducts.length === 0 && <EmptyRow colSpan={6} />}
+              </tbody>
+            </table>
+          </div>
+          <PaginationControls {...inactiveProductPagination} />
+        </article>
+      )}
 
       {renderProductModal()}
       {renderEditProductModal()}
@@ -1595,19 +1691,36 @@ function AddButton({ onClick }: { onClick: () => void }) {
 function IconActions({
   canEdit,
   canDelete,
+  canToggleActive = false,
+  isActive = true,
   onEdit,
   onDelete,
+  onToggleActive,
 }: {
   canEdit: boolean
   canDelete: boolean
+  canToggleActive?: boolean
+  isActive?: boolean
   onEdit: () => void
   onDelete: () => void
+  onToggleActive?: () => void
 }) {
   return (
     <div className="icon-actions">
       {canEdit && (
         <button type="button" className="icon-button" title="Modifier" aria-label="Modifier" onClick={onEdit}>
           <Pencil size={16} aria-hidden="true" />
+        </button>
+      )}
+      {canToggleActive && onToggleActive && (
+        <button
+          type="button"
+          className={`icon-button${isActive ? ' danger-icon' : ''}`}
+          title={isActive ? 'Desactiver' : 'Activer'}
+          aria-label={isActive ? 'Desactiver' : 'Activer'}
+          onClick={onToggleActive}
+        >
+          <Power size={16} aria-hidden="true" />
         </button>
       )}
       {canDelete && (

@@ -113,6 +113,10 @@ export const api = {
     return request<Produit[]>('/produits/', token)
   },
 
+  produitsInactifs(token: string) {
+    return request<Produit[]>('/produits/inactifs', token)
+  },
+
   createProduit(token: string, produit: ProduitCreate) {
     return request<Produit>('/produits/', token, {
       method: 'POST',
@@ -124,6 +128,13 @@ export const api = {
     return request<Produit | { detail: string }>(`/produits/${id}`, token, {
       method: 'PUT',
       body: JSON.stringify(produit),
+    })
+  },
+
+  setProduitActive(token: string, id: number, is_active: boolean) {
+    return request<Produit | { detail: string }>(`/produits/${id}/active`, token, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active }),
     })
   },
 
@@ -199,6 +210,23 @@ export const api = {
     })
   },
 
+  updateTransfert(
+    token: string,
+    id: number,
+    transfert: Partial<Pick<TransfertCreate, 'quantite' | 'prix_unitaire' | 'point_vente' | 'commentaire'>>,
+  ) {
+    return request<Transfert>(`/ventes/transferts/${id}`, token, {
+      method: 'PUT',
+      body: JSON.stringify(transfert),
+    })
+  },
+
+  deleteTransfert(token: string, id: number) {
+    return request<{ message: string }>(`/ventes/transferts/${id}`, token, {
+      method: 'DELETE',
+    })
+  },
+
   etatsProduits(token: string, showAll = false) {
     return request<PaginatedEtatProduitResponse>(
       `/etats-produits/?page_size=100&show_all=${showAll ? 'true' : 'false'}`,
@@ -244,8 +272,12 @@ export const api = {
     })
   },
 
-  approvals(token: string) {
-    return request<Approval[]>('/approvals/', token)
+  approvals(token: string, options?: { status?: 'PENDING' | 'APPROVED' | 'REJECTED'; include_all?: boolean }) {
+    const params = new URLSearchParams()
+    if (options?.status) params.set('status', options.status)
+    if (options?.include_all) params.set('include_all', 'true')
+    const query = params.toString()
+    return request<Approval[]>(`/approvals/${query ? `?${query}` : ''}`, token)
   },
 
   adminNotifications(token: string) {
