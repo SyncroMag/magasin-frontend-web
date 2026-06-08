@@ -1,6 +1,6 @@
 import { Check, ChevronDown, ChevronUp, Pencil, Plus, Printer, ReceiptText, Save, Search, Send, Trash2, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api } from '../../api'
 import { STORE_NAME } from '../../constants'
 import { FormattedNumberInput } from '../common/FormattedNumberInput'
@@ -15,6 +15,8 @@ type SaleSection = 'list' | 'create' | 'transfer'
 type CartLine = {
   produit_id: number
   nom: string
+  type: string
+  categorie: string
   partner_name?: string | null
   quantite: number
   prix_unitaire: number
@@ -90,12 +92,6 @@ export function SalesPage({
   const [transferSearch, setTransferSearch] = useState('')
   const [editingTransfer, setEditingTransfer] = useState<TransferEditForm | null>(null)
   const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null)
-  const [appliedListFilters, setAppliedListFilters] = useState({
-    type: '',
-    categorie: '',
-    productId: '',
-    search: '',
-  })
 
   const typeOptions = useMemo(() => unique(produits.map((produit) => produit.type)), [produits])
   const categoryOptions = useMemo(
@@ -140,27 +136,29 @@ export function SalesPage({
   )
   const filteredVentes = useMemo(
     () =>
-      ventes.filter((vente) => {
+      ventes
+        .filter((vente) => {
         const matchesProductFilter =
-          !appliedListFilters.type && !appliedListFilters.categorie && !appliedListFilters.productId
+          !listType && !listCategory && !listProductId
             ? true
             : (vente.details ?? []).some((detail) => {
           const produit = produits.find((item) => item.id === detail.produit_id)
           if (!produit) return false
 
           return (
-            (!appliedListFilters.type || produit.type === appliedListFilters.type) &&
-            (!appliedListFilters.categorie || produit.categorie === appliedListFilters.categorie) &&
-            (!appliedListFilters.productId || produit.id === Number(appliedListFilters.productId))
+            (!listType || produit.type === listType) &&
+            (!listCategory || produit.categorie === listCategory) &&
+            (!listProductId || produit.id === Number(listProductId))
           )
               })
 
         return (
           matchesProductFilter &&
-          matchesSaleSearch(vente, appliedListFilters.search, produits)
+          matchesSaleSearch(vente, saleSearch, produits)
         )
-      }),
-    [appliedListFilters, produits, ventes],
+      })
+        .sort(compareSalesDesc),
+    [listCategory, listProductId, listType, produits, saleSearch, ventes],
   )
   const filteredTransferts = useMemo(() => {
     const value = transferSearch.trim().toLocaleLowerCase()
@@ -203,6 +201,8 @@ export function SalesPage({
     ? {
         produit_id: selectedProduct.id,
         nom: selectedProduct.nom,
+        type: selectedProduct.type,
+        categorie: selectedProduct.categorie,
         partner_name: selectedProduct.is_partner ? selectedProduct.partner_name : null,
         quantite: quantity,
         prix_unitaire: price,
@@ -217,6 +217,8 @@ export function SalesPage({
     ? {
         produit_id: selectedEditProduct.id,
         nom: selectedEditProduct.nom,
+        type: selectedEditProduct.type,
+        categorie: selectedEditProduct.categorie,
         partner_name: selectedEditProduct.is_partner ? selectedEditProduct.partner_name : null,
         quantite: editQuantity,
         prix_unitaire: editPrice,
@@ -253,12 +255,18 @@ export function SalesPage({
     setListType(value)
     setListCategory('')
     setListProductId('')
+    setExpandedSaleId(null)
   }
 
   function handleListCategoryChange(value: string) {
     setListCategory(value)
     setListProductId('')
+    setExpandedSaleId(null)
   }
+
+  useEffect(() => {
+    setExpandedSaleId(null)
+  }, [listProductId, saleSearch])
 
   function handleEditTypeChange(value: string) {
     setEditType(value)
@@ -282,17 +290,6 @@ export function SalesPage({
     setEditLineDiscount(0)
   }
 
-  function submitSaleSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setAppliedListFilters({
-      type: listType,
-      categorie: listCategory,
-      productId: listProductId,
-      search: saleSearch.trim(),
-    })
-    setExpandedSaleId(null)
-  }
-
   function addToCart() {
     if (!selectedProduct) {
       notifyError('Choisis un produit.')
@@ -309,6 +306,8 @@ export function SalesPage({
       {
         produit_id: selectedProduct.id,
         nom: selectedProduct.nom,
+        type: selectedProduct.type,
+        categorie: selectedProduct.categorie,
         partner_name: selectedProduct.is_partner ? selectedProduct.partner_name : null,
         quantite: quantity,
         prix_unitaire: price,
@@ -428,12 +427,12 @@ export function SalesPage({
   }
 
   async function deleteSale(venteId: number) {
-    const confirmed = await confirmAction('Supprimer cette vente ?', 'Le stock sera restaure.')
+    const confirmed = await confirmAction('Supprimer cette vente definitivement ?', 'Le stock sera restaure et aucune annulation ne sera enregistree.')
     if (!confirmed) return
 
     try {
       await api.deleteVente(token, venteId)
-      notifySuccess('Vente supprimee.')
+      notifySuccess('Vente supprimee definitivement.')
       await onRefresh()
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Suppression vente impossible')
@@ -511,6 +510,8 @@ export function SalesPage({
         return {
           produit_id: detail.produit_id,
           nom: produit?.nom ?? `Produit #${detail.produit_id}`,
+          type: produit?.type ?? 'Type inconnu',
+          categorie: produit?.categorie ?? 'Categorie inconnue',
           partner_name: detail.partner_name ?? produit?.partner_name ?? null,
           quantite: detail.quantite,
           prix_unitaire: Number(detail.prix_unitaire_initial ?? detail.prix_unitaire),
@@ -536,6 +537,8 @@ export function SalesPage({
       {
         produit_id: selectedEditProduct.id,
         nom: selectedEditProduct.nom,
+        type: selectedEditProduct.type,
+        categorie: selectedEditProduct.categorie,
         partner_name: selectedEditProduct.is_partner ? selectedEditProduct.partner_name : null,
         quantite: editQuantity,
         prix_unitaire: editPrice,
@@ -615,7 +618,7 @@ export function SalesPage({
           </div>
           <ReceiptText size={20} aria-hidden="true" />
         </div>
-        <form className="filter-form sales-filter-form" onSubmit={submitSaleSearch}>
+        <div className="filter-form sales-filter-form">
           <label>
             Recherche
             <input
@@ -669,7 +672,7 @@ export function SalesPage({
             )}
           </label>
           
-        </form>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
@@ -705,7 +708,7 @@ export function SalesPage({
                       <td data-label="Date">{dateLabel(vente.date_vente)}</td>
                       <td data-label="Reduction">{money(calculateSaleReduction(vente))}</td>
                       <td data-label="Total">{money(vente.total)}</td>
-                      <td data-label="Vendeur">{vente.vendeur_id ?? '-'}</td>
+                      <td data-label="Vendeur">{vente.vendeur_nom || vente.vendeur_id || '-'}</td>
                       {canManageSales && (
                         <td data-label="Actions">
                           <div className="icon-actions">
@@ -1511,6 +1514,13 @@ function roundAmount(value: number) {
   return Number(value.toFixed(2))
 }
 
+function compareSalesDesc(a: Vente, b: Vente) {
+  const aTime = a.date_vente ? new Date(a.date_vente).getTime() : 0
+  const bTime = b.date_vente ? new Date(b.date_vente).getTime() : 0
+  if (aTime !== bTime) return bTime - aTime
+  return Number(b.id) - Number(a.id)
+}
+
 function unique(values: string[]) {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b))
 }
@@ -1543,6 +1553,8 @@ function matchesSaleSearch(vente: Vente, query: string, produits: Produit[]) {
 
   const searchableValues = [
     vente.client,
+    vente.vendeur_nom ?? '',
+    String(vente.vendeur_id ?? ''),
     String(vente.id),
     `#${vente.id}`,
     ...dateSearchValues(vente.date_vente),
@@ -1620,6 +1632,7 @@ function printReceipt(lines: CartLine[], client: string, discount: number, comme
           .map(
             (line) => `
               <div>${escapeHtml(line.nom)} x ${line.quantite}${line.partner_name ? ` - partenaire ${escapeHtml(line.partner_name)}` : ''}</div>
+              <div>${escapeHtml(line.type)} / ${escapeHtml(line.categorie)}</div>
               <div class="line"><span>${line.reduction ? `Remise ${money(line.reduction)}` : ''}</span><span>${money(lineTotal(line))}</span></div>
             `,
           )

@@ -1,8 +1,40 @@
 import { SESSION_KEY } from '../constants'
 import type { Session } from '../types'
 
+let memorySession: Session | null = null
+
+function getStoredValue() {
+  try {
+    return localStorage.getItem(SESSION_KEY) ?? sessionStorage.getItem(SESSION_KEY)
+  } catch {
+    try {
+      return sessionStorage.getItem(SESSION_KEY)
+    } catch {
+      return null
+    }
+  }
+}
+
+function removeStoredValue() {
+  try {
+    localStorage.removeItem(SESSION_KEY)
+  } catch {
+    // Storage may be blocked by the browser on some client PCs.
+  }
+
+  try {
+    sessionStorage.removeItem(SESSION_KEY)
+  } catch {
+    // Storage may be blocked by the browser on some client PCs.
+  }
+}
+
 export function readSession(): Session | null {
-  const value = localStorage.getItem(SESSION_KEY)
+  if (memorySession && !isSessionExpired(memorySession)) {
+    return memorySession
+  }
+
+  const value = getStoredValue()
 
   if (!value) {
     return null
@@ -11,23 +43,41 @@ export function readSession(): Session | null {
   try {
     const session = JSON.parse(value) as Session
     if (isSessionExpired(session)) {
-      localStorage.removeItem(SESSION_KEY)
+      memorySession = null
+      removeStoredValue()
       return null
     }
 
+    memorySession = session
     return session
   } catch {
-    localStorage.removeItem(SESSION_KEY)
+    memorySession = null
+    removeStoredValue()
     return null
   }
 }
 
 export function saveSession(session: Session) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+  memorySession = session
+  const value = JSON.stringify(session)
+
+  try {
+    localStorage.setItem(SESSION_KEY, value)
+    return
+  } catch {
+    // Fall back below.
+  }
+
+  try {
+    sessionStorage.setItem(SESSION_KEY, value)
+  } catch {
+    // The in-memory session still lets the user enter the app.
+  }
 }
 
 export function clearSession() {
-  localStorage.removeItem(SESSION_KEY)
+  memorySession = null
+  removeStoredValue()
 }
 
 export function isSessionExpired(session: Session) {

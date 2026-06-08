@@ -62,6 +62,7 @@ type CashMovementRow = {
   credit: number
   source: 'COMPTA' | 'TIERS'
   countInTotals: boolean
+  paymentStatus?: string
 }
 
 export function AccountingPage({
@@ -179,6 +180,7 @@ export function AccountingPage({
     () => ({
       internal: cashMovementRows.filter((row) => row.operation.toLowerCase().includes('transfert interne')).length,
       tiers: cashMovementRows.filter((row) => row.source === 'TIERS').length,
+      pending: cashMovementRows.filter((row) => row.source === 'TIERS' && row.paymentStatus === 'NON_PAYE').length,
     }),
     [cashMovementRows],
   )
@@ -411,6 +413,7 @@ export function AccountingPage({
             <span className="pill ok">Debit: {money(cashMovementTotals.debit)}</span>
             <span className="pill warn">Credit: {money(cashMovementTotals.credit)}</span>
             <span className="pill">Transferts vers tiers: {transferCounters.tiers}</span>
+            <span className="pill warn">Non payes: {transferCounters.pending}</span>
           </div>
           <CashMovementsTable rows={cashMovementRows} />
         </article>
@@ -645,7 +648,13 @@ function CashMovementsTable({ rows }: { rows: CashMovementRow[] }) {
                 <td data-label="Canal">{row.canal}</td>
                 <td data-label="Motif">
                   <strong>{row.motif}</strong>
-                  <span>{row.source === 'TIERS' ? 'Source: transfert vers tiers' : 'Source: comptabilite'}</span>
+                  <span>
+                    {row.source === 'TIERS'
+                      ? row.paymentStatus === 'NON_PAYE'
+                        ? 'Source: transfert vers tiers - paiement en attente'
+                        : 'Source: transfert vers tiers'
+                      : 'Source: comptabilite'}
+                  </span>
                 </td>
                 <td data-label="Debit">
                   <strong className={row.debit > 0 ? 'amount-positive' : ''}>{row.debit > 0 ? money(row.debit) : '-'}</strong>
@@ -935,12 +944,13 @@ function buildGeneralCashMovements({
           .includes('transfert'),
     )
     const total = (Number(transfert.quantite) || 0) * (Number(transfert.prix_unitaire) || 0)
-    const debit = transfert.statut === 'PAYE' ? total : 0
+    const showLegacyPaidAmount = transfert.statut === 'PAYE' && !relatedAccountingEntry
+    const debit = showLegacyPaidAmount ? total : 0
 
     rows.push({
       id: `tiers-${transfert.id}`,
       date: transfert.created_at,
-      operation: 'Transfert vers tiers',
+      operation: transfert.statut === 'NON_PAYE' ? 'Transfert vers tiers - non paye' : 'Transfert vers tiers',
       canal: 'Tiers',
       motif: `${transfert.point_vente} (${transfert.statut}) - ${
         transfert.produit?.nom ?? productsById.get(transfert.produit_id)?.nom ?? `Produit #${transfert.produit_id}`
@@ -948,7 +958,8 @@ function buildGeneralCashMovements({
       debit,
       credit: 0,
       source: 'TIERS',
-      countInTotals: !relatedAccountingEntry && debit > 0,
+      countInTotals: showLegacyPaidAmount,
+      paymentStatus: transfert.statut,
     })
   }
 
@@ -982,14 +993,15 @@ function entryTypeLabel(value: string) {
     TRANSFER_OUT: 'Transfert envoye',
     SALE: 'Vente',
     SALE_ADJUSTMENT: 'Ajustement vente',
-    SALE_CANCEL: 'Annulation vente',
     EXPENSE: 'Depense',
     SALARY_ADVANCE: 'Avance salaire',
     SALARY_ADVANCE_CANCEL: 'Annulation avance',
     SALARY_PAYMENT: 'Paiement salaire',
     PARTNER_PAYOUT: 'Retour partenaire',
     PARTNER_PAYOUT_ADJUSTMENT: 'Ajustement partenaire',
-    PARTNER_PAYOUT_CANCEL: 'Annulation retour partenaire',
+    TRANSFER_PAYMENT: 'Paiement transfert',
+    TRANSFER_PAYMENT_ADJUSTMENT: 'Ajustement paiement transfert',
+    TRANSFER_PAYMENT_CANCEL: 'Annulation paiement transfert',
   }
 
   return labels[value] ?? value

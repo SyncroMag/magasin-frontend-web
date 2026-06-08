@@ -110,6 +110,7 @@ export function StockPage({
     commentaire: '',
   })
   const showStockActions = canManageStock || canDeleteStock
+  const showStockFinancialColumns = canManageStock
   const showStateActions = canManageStock
 
   const typeOptions = useMemo(() => unique(produits.map((produit) => produit.type)), [produits])
@@ -1209,9 +1210,9 @@ export function StockPage({
               <th>Type</th>
               <th>Categorie</th>
               <th>Quantite</th>
-              <th>Cout (Ar)</th>
+              {showStockFinancialColumns && <th>Cout (Ar)</th>}
               <th>Prix vente (Ar)</th>
-              <th>Marge</th>
+              {showStockFinancialColumns && <th>Marge</th>}
               <th>Partenaire</th>
               <th>Etat</th>
               {showStockActions && <th>Actions</th>}
@@ -1227,9 +1228,9 @@ export function StockPage({
                 <td data-label="Type">{produit.type}</td>
                 <td data-label="Categorie">{produit.categorie}</td>
                 <td data-label="Quantite">{produit.quantite}</td>
-                <td data-label="Cout">{money(produit.cout_achat)}</td>
+                {showStockFinancialColumns && <td data-label="Cout">{money(produit.cout_achat)}</td>}
                 <td data-label="Prix vente">{money(produit.prix_vente)}</td>
-                <td data-label="Marge">{profitLabel(produit.cout_achat, produit.prix_vente)}</td>
+                {showStockFinancialColumns && <td data-label="Marge">{profitLabel(produit.cout_achat, produit.prix_vente)}</td>}
                 <td data-label="Partenaire">
                   {produit.is_partner ? (
                     <span className="pill info">{produit.partner_name || 'Partenaire'}</span>
@@ -1257,7 +1258,7 @@ export function StockPage({
                 )}
               </tr>
             ))}
-            {filteredProducts.length === 0 && <EmptyRow colSpan={showStockActions ? 10 : 9} />}
+            {filteredProducts.length === 0 && <EmptyRow colSpan={7 + (showStockFinancialColumns ? 2 : 0) + (showStockActions ? 1 : 0)} />}
           </tbody>
         </table>
       </div>

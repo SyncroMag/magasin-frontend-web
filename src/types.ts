@@ -49,6 +49,7 @@ export type Vente = {
   reduction_panier?: number
   date_vente?: string
   vendeur_id?: number
+  vendeur_nom?: string | null
   details?: VenteDetail[]
 }
 

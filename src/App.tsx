@@ -29,27 +29,8 @@ function App() {
 
   useEffect(() => {
     window.addEventListener('auth-expired', handleLogout)
-
-    if (!session?.expiresAt) {
-      return () => window.removeEventListener('auth-expired', handleLogout)
-    }
-
-    const delay = session.expiresAt - Date.now()
-    if (delay <= 0) {
-      const timeoutId = window.setTimeout(handleLogout, 0)
-      return () => {
-        window.clearTimeout(timeoutId)
-        window.removeEventListener('auth-expired', handleLogout)
-      }
-    }
-
-    const timeoutId = window.setTimeout(handleLogout, delay)
-
-    return () => {
-      window.clearTimeout(timeoutId)
-      window.removeEventListener('auth-expired', handleLogout)
-    }
-  }, [session])
+    return () => window.removeEventListener('auth-expired', handleLogout)
+  }, [])
 
   if (!session) {
     return <LoginPage onLogin={handleLogin} />
