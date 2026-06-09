@@ -47,6 +47,7 @@ export type Vente = {
   client: string
   total: number
   reduction_panier?: number
+  modified_by_superadmin?: boolean
   date_vente?: string
   vendeur_id?: number
   vendeur_nom?: string | null

@@ -48,6 +48,7 @@ type SalesPageProps = {
   canManageSales: boolean
   canManageTransferActions: boolean
   canManageTransferRecords: boolean
+  canViewFinancialStats: boolean
   token: string
   onRefresh: () => Promise<void>
 }
@@ -60,6 +61,7 @@ export function SalesPage({
   canManageSales,
   canManageTransferActions,
   canManageTransferRecords,
+  canViewFinancialStats,
   token,
   onRefresh,
 }: SalesPageProps) {
@@ -95,32 +97,32 @@ export function SalesPage({
 
   const typeOptions = useMemo(() => unique(produits.map((produit) => produit.type)), [produits])
   const categoryOptions = useMemo(
-    () => unique(produits.filter((produit) => !type || produit.type === type).map((produit) => produit.categorie)),
+    () => unique(produits.filter((produit) => matchesFilterText(produit.type, type)).map((produit) => produit.categorie)),
     [produits, type],
   )
   const productOptions = useMemo(
     () =>
       produits.filter(
         (produit) =>
-          (!type || produit.type === type) &&
-          (!categorie || produit.categorie === categorie),
+          matchesFilterText(produit.type, type) &&
+          matchesFilterText(produit.categorie, categorie),
       ),
     [categorie, produits, type],
   )
   const listCategoryOptions = useMemo(
-    () => unique(produits.filter((produit) => !listType || produit.type === listType).map((produit) => produit.categorie)),
+    () => unique(produits.filter((produit) => matchesFilterText(produit.type, listType)).map((produit) => produit.categorie)),
     [listType, produits],
   )
   const listProductOptions = useMemo(
     () =>
       produits.filter(
         (produit) =>
-          (!listType || produit.type === listType) &&
-          (!listCategory || produit.categorie === listCategory),
+          matchesFilterText(produit.type, listType) &&
+          matchesFilterText(produit.categorie, listCategory),
       ),
     [listCategory, listType, produits],
   )
-  const selectedListProduct = produits.find((produit) => produit.id === Number(listProductId))
+  const selectedListProduct = findProductFromInput(listProductId, listProductOptions)
   const editCategoryOptions = useMemo(
     () => unique(produits.filter((produit) => !editType || produit.type === editType).map((produit) => produit.categorie)),
     [editType, produits],
@@ -138,7 +140,7 @@ export function SalesPage({
     () =>
       ventes
         .filter((vente) => {
-        const matchesProductFilter =
+        const matchesSelectedFilters =
           !listType && !listCategory && !listProductId
             ? true
             : (vente.details ?? []).some((detail) => {
@@ -146,14 +148,14 @@ export function SalesPage({
           if (!produit) return false
 
           return (
-            (!listType || produit.type === listType) &&
-            (!listCategory || produit.categorie === listCategory) &&
-            (!listProductId || produit.id === Number(listProductId))
+            matchesFilterText(produit.type, listType) &&
+            matchesFilterText(produit.categorie, listCategory) &&
+            matchesProductFilter(produit, listProductId)
           )
               })
 
         return (
-          matchesProductFilter &&
+          matchesSelectedFilters &&
           matchesSaleSearch(vente, saleSearch, produits)
         )
       })
@@ -180,7 +182,7 @@ export function SalesPage({
     )
   }, [transferSearch, transferts])
 
-  const selectedProduct = produits.find((produit) => produit.id === Number(productId))
+  const selectedProduct = findProductFromInput(productId, productOptions)
   const selectedEditProduct = produits.find((produit) => produit.id === Number(editProductId))
   const productsById = useMemo(() => new Map(produits.map((produit) => [produit.id, produit])), [produits])
   const { pageItems: paginatedVentes, controls: ventePagination } = usePaginatedItems(filteredVentes)
@@ -247,7 +249,7 @@ export function SalesPage({
 
   function handleProductChange(value: string) {
     setProductId(value)
-    const produit = produits.find((item) => item.id === Number(value))
+    const produit = findProductFromInput(value, productOptions)
     setPrice(Number(produit?.prix_vente ?? 0))
   }
 
@@ -629,44 +631,45 @@ export function SalesPage({
           </label>
           <label>
             Type
-            <select value={listType} onChange={(event) => handleListTypeChange(event.target.value)}>
-              <option value="">Tous les types</option>
+            <input
+              list="sales-list-type-options"
+              value={listType}
+              onChange={(event) => handleListTypeChange(event.target.value)}
+              placeholder="Tous les types"
+            />
+            <datalist id="sales-list-type-options">
               {typeOptions.map((item) => (
-                <option value={item} key={item}>
-                  {item}
-                </option>
+                <option value={item} key={item} />
               ))}
-            </select>
+            </datalist>
           </label>
           <label>
             Categorie
-            <select
+            <input
+              list="sales-list-category-options"
               value={listCategory}
               onChange={(event) => handleListCategoryChange(event.target.value)}
-              disabled={!listType}
-            >
-              <option value="">Toutes les categories</option>
+              placeholder="Toutes les categories"
+            />
+            <datalist id="sales-list-category-options">
               {listCategoryOptions.map((item) => (
-                <option value={item} key={item}>
-                  {item}
-                </option>
+                <option value={item} key={item} />
               ))}
-            </select>
+            </datalist>
           </label>
           <label>
             Produit
-            <select
+            <input
+              list="sales-list-product-options"
               value={listProductId}
               onChange={(event) => setListProductId(event.target.value)}
-              disabled={!listCategory}
-            >
-              <option value="">Tous les produits</option>
+              placeholder="Tous les produits"
+            />
+            <datalist id="sales-list-product-options">
               {listProductOptions.map((produit) => (
-                <option key={produit.id} value={produit.id}>
-                  {produit.nom}
-                </option>
+                <option key={produit.id} value={productOptionLabel(produit)} />
               ))}
-            </select>
+            </datalist>
             {selectedListProduct?.is_partner && (
               <span className="profit-note">Partenaire: {selectedListProduct.partner_name}</span>
             )}
@@ -708,7 +711,7 @@ export function SalesPage({
                       <td data-label="Date">{dateLabel(vente.date_vente)}</td>
                       <td data-label="Reduction">{money(calculateSaleReduction(vente))}</td>
                       <td data-label="Total">{money(vente.total)}</td>
-                      <td data-label="Vendeur">{vente.vendeur_nom || vente.vendeur_id || '-'}</td>
+                      <td data-label="Vendeur">{vente.vendeur_nom || '-'}</td>
                       {canManageSales && (
                         <td data-label="Actions">
                           <div className="icon-actions">
@@ -889,7 +892,7 @@ export function SalesPage({
                   min={0.01}
                   onValueChange={setPrice}
                 />
-                {selectedProduct && (
+                {canViewFinancialStats && selectedProduct && (
                   <span className="profit-note">
                     PA: {money(selectedProduct.cout_achat)} - {currentTransferProfitLabel}
                   </span>
@@ -1088,36 +1091,45 @@ export function SalesPage({
         <div className="compact-form">
           <label>
             Type
-            <select value={type} onChange={(event) => handleTypeChange(event.target.value)}>
-              <option value="">Selectionner un type</option>
+            <input
+              list="sales-create-type-options"
+              value={type}
+              onChange={(event) => handleTypeChange(event.target.value)}
+              placeholder="Selectionner ou saisir un type"
+            />
+            <datalist id="sales-create-type-options">
               {typeOptions.map((item) => (
-                <option value={item} key={item}>
-                  {item}
-                </option>
+                <option value={item} key={item} />
               ))}
-            </select>
+            </datalist>
           </label>
           <label>
             Categorie
-            <select value={categorie} onChange={(event) => handleCategoryChange(event.target.value)} disabled={!type}>
-              <option value="">Selectionner une categorie</option>
+            <input
+              list="sales-create-category-options"
+              value={categorie}
+              onChange={(event) => handleCategoryChange(event.target.value)}
+              placeholder="Selectionner ou saisir une categorie"
+            />
+            <datalist id="sales-create-category-options">
               {categoryOptions.map((item) => (
-                <option value={item} key={item}>
-                  {item}
-                </option>
+                <option value={item} key={item} />
               ))}
-            </select>
+            </datalist>
           </label>
           <label>
             Produit
-            <select value={productId} onChange={(event) => handleProductChange(event.target.value)} disabled={!categorie}>
-              <option value="">Selectionner un produit</option>
+            <input
+              list="sales-create-product-options"
+              value={productId}
+              onChange={(event) => handleProductChange(event.target.value)}
+              placeholder="Selectionner ou saisir un produit"
+            />
+            <datalist id="sales-create-product-options">
               {productOptions.map((produit) => (
-                <option key={produit.id} value={produit.id}>
-                  {productOptionLabel(produit)}
-                </option>
+                <option key={produit.id} value={productOptionLabel(produit)} />
               ))}
-            </select>
+            </datalist>
           </label>
           <div className="two-cols">
             <label>
@@ -1279,9 +1291,11 @@ export function SalesPage({
                 setEditingTransfer((current) => (current ? { ...current, prix_unitaire } : current))
               }
             />
-            <span className="profit-note">
-              PA: {money(produit?.cout_achat ?? 0)} - {benefit}
-            </span>
+            {canViewFinancialStats && (
+              <span className="profit-note">
+                PA: {money(produit?.cout_achat ?? 0)} - {benefit}
+              </span>
+            )}
           </label>
           <label>
             Point de vente
@@ -1529,6 +1543,40 @@ function productOptionLabel(produit: Produit) {
   return `${produit.nom} - stock ${produit.quantite}${produit.is_partner ? ` - partenaire ${produit.partner_name ?? ''}` : ''}`
 }
 
+function normalizeText(value: string | number | null | undefined): string {
+  return String(value ?? '').trim().toLocaleLowerCase()
+}
+
+function matchesFilterText(source: string | null | undefined, filter: string): boolean {
+  const value = normalizeText(filter)
+  if (!value) return true
+  return normalizeText(source).includes(value)
+}
+
+function matchesProductFilter(produit: Produit, filter: string): boolean {
+  const value = normalizeText(filter)
+  if (!value) return true
+
+  return (
+    String(produit.id) === value ||
+    normalizeText(produit.nom).includes(value) ||
+    normalizeText(productOptionLabel(produit)).includes(value)
+  )
+}
+
+function findProductFromInput(value: string, options: Produit[]): Produit | undefined {
+  const normalized = normalizeText(value)
+  if (!normalized) return undefined
+
+  return options.find((produit) => {
+    return (
+      String(produit.id) === normalized ||
+      normalizeText(produit.nom) === normalized ||
+      normalizeText(productOptionLabel(produit)) === normalized
+    )
+  })
+}
+
 function availableEditQuantity(
   produitId: number,
   editLines: CartLine[],
@@ -1632,7 +1680,7 @@ function printReceipt(lines: CartLine[], client: string, discount: number, comme
           .map(
             (line) => `
               <div>${escapeHtml(line.nom)} x ${line.quantite}${line.partner_name ? ` - partenaire ${escapeHtml(line.partner_name)}` : ''}</div>
-              <div>${escapeHtml(line.type)} / ${escapeHtml(line.categorie)}</div>
+              <div>Type: ${escapeHtml(line.type)} | Categorie: ${escapeHtml(line.categorie)}</div>
               <div class="line"><span>${line.reduction ? `Remise ${money(line.reduction)}` : ''}</span><span>${money(lineTotal(line))}</span></div>
             `,
           )

@@ -114,7 +114,7 @@ export function AccountingPage({
   const inventoryEntries = useMemo(() => inventory?.entries ?? [], [inventory])
   const activeProducts = useMemo(() => produits.filter((produit) => produit.is_active), [produits])
   const monthSales = useMemo(
-    () => ventes.filter((vente) => isMonthMatch(saleDateValue(vente), inventoryMonth)),
+    () => ventes.filter((vente) => !vente.modified_by_superadmin && isMonthMatch(saleDateValue(vente), inventoryMonth)),
     [inventoryMonth, ventes],
   )
   const monthTransfers = useMemo(
