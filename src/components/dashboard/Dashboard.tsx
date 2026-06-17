@@ -831,7 +831,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
                 ? 'transfer'
                 : 'create'
           }
-          canManageSales={session.role === 'SUPER_ADMIN'}
+          canManageSales={session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'}
           canManageTransferActions={session.role === 'VENDEUR' || session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'}
           canManageTransferRecords={session.role === 'SUPER_ADMIN'}
           canViewFinancialStats={canViewFinancialStats}

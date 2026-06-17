@@ -368,13 +368,13 @@ export function SalesPage({
         return
       }
 
-      await api.createVente(token, {
+      const createdSale = await api.createVente(token, {
         client: client.trim() || 'Client comptoir',
         reduction_panier: appliedCartDiscount,
         details: buildSaleDetails(cart, appliedCartDiscount),
       })
       notifySuccess('Vente confirmee.')
-      printReceipt(cart, client || 'Client comptoir', appliedCartDiscount, comment)
+      printReceipt(cart, client || 'Client comptoir', appliedCartDiscount, comment, saleNumber(createdSale))
       resetSale()
       await onRefresh()
     } catch (err) {
@@ -433,8 +433,8 @@ export function SalesPage({
     if (!confirmed) return
 
     try {
-      await api.deleteVente(token, venteId)
-      notifySuccess('Vente supprimee definitivement.')
+      const result = await api.deleteVente(token, venteId)
+      notifySuccess(result.detail ?? result.message ?? 'Vente supprimee definitivement.')
       await onRefresh()
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Suppression vente impossible')
@@ -571,13 +571,13 @@ export function SalesPage({
         return
       }
 
-      await api.updateVente(token, editingSale.id, {
+      const result = await api.updateVente(token, editingSale.id, {
         client: editClient.trim() || 'Client comptoir',
         reduction_panier: 0,
         details: buildSaleDetails(editLines, 0),
       })
       setEditingSale(null)
-      notifySuccess('Vente modifiee.')
+      notifySuccess(result.detail ?? result.message ?? 'Vente modifiee.')
       await onRefresh()
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Modification vente impossible')
@@ -626,7 +626,7 @@ export function SalesPage({
             <input
               value={saleSearch}
               onChange={(event) => setSaleSearch(event.target.value)}
-              placeholder="Client, ticket ou produit"
+              placeholder="Client, numero ou produit"
             />
           </label>
           <label>
@@ -680,7 +680,7 @@ export function SalesPage({
           <table>
             <thead>
               <tr>
-                <th>Ticket</th>
+                <th>N vente</th>
                 <th>Client</th>
                 <th>Marchandises</th>
                 <th>Date</th>
@@ -700,10 +700,10 @@ export function SalesPage({
                       className={`clickable-row${isExpanded ? ' selected-row' : ''}`}
                       onClick={() => toggleSaleDetails(vente.id)}
                     >
-                      <td data-label="Ticket">
+                      <td data-label="N vente">
                         <span className="expand-cell">
                           {isExpanded ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
-                          #{vente.id}
+                          {saleNumber(vente)}
                         </span>
                       </td>
                       <td data-label="Client">{vente.client}</td>
@@ -1535,6 +1535,17 @@ function compareSalesDesc(a: Vente, b: Vente) {
   return Number(b.id) - Number(a.id)
 }
 
+function saleNumber(vente: Vente) {
+  return vente.numero_vente || formatSaleNumberFromDate(vente.date_vente) || String(vente.id)
+}
+
+function formatSaleNumberFromDate(value?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`
+}
+
 function unique(values: string[]) {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b))
 }
@@ -1603,8 +1614,7 @@ function matchesSaleSearch(vente: Vente, query: string, produits: Produit[]) {
     vente.client,
     vente.vendeur_nom ?? '',
     String(vente.vendeur_id ?? ''),
-    String(vente.id),
-    `#${vente.id}`,
+    saleNumber(vente),
     ...dateSearchValues(vente.date_vente),
     ...(vente.details ?? []).flatMap((detail) => {
       const produit = produits.find((item) => item.id === detail.produit_id)
@@ -1650,7 +1660,7 @@ function profitLabel(cout: number, prix: number) {
   return `${(((prix - cout) / cout) * 100).toFixed(1)}% benefice`
 }
 
-function printReceipt(lines: CartLine[], client: string, discount: number, comment: string) {
+function printReceipt(lines: CartLine[], client: string, discount: number, comment: string, venteNumber = '') {
   if (lines.length === 0) return
 
   const subtotal = lines.reduce((total, line) => total + lineTotal(line), 0)
@@ -1673,6 +1683,7 @@ function printReceipt(lines: CartLine[], client: string, discount: number, comme
       </head>
       <body>
         <h1>${escapeHtml(STORE_NAME)}</h1>
+        ${venteNumber ? `<div>N vente: ${escapeHtml(venteNumber)}</div>` : ''}
         <div>Client: ${escapeHtml(client)}</div>
         <div>Date: ${new Date().toLocaleString('fr-FR')}</div>
         <hr />

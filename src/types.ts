@@ -44,6 +44,7 @@ export type VenteDetail = {
 
 export type Vente = {
   id: number
+  numero_vente?: string
   client: string
   total: number
   reduction_panier?: number

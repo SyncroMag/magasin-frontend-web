@@ -111,6 +111,7 @@ export function AccountingPage({
     [account, entries],
   )
   const productsById = useMemo(() => new Map(produits.map((produit) => [produit.id, produit])), [produits])
+  const salesById = useMemo(() => new Map(ventes.map((vente) => [vente.id, vente])), [ventes])
   const inventoryEntries = useMemo(() => inventory?.entries ?? [], [inventory])
   const activeProducts = useMemo(() => produits.filter((produit) => produit.is_active), [produits])
   const monthSales = useMemo(
@@ -159,8 +160,8 @@ export function AccountingPage({
     [monthArrivals],
   )
   const cashMovementRows = useMemo(
-    () => buildGeneralCashMovements({ entries: inventoryEntries, transfers: monthTransfers, productsById }),
-    [inventoryEntries, monthTransfers, productsById],
+    () => buildGeneralCashMovements({ entries: inventoryEntries, transfers: monthTransfers, productsById, salesById }),
+    [inventoryEntries, monthTransfers, productsById, salesById],
   )
   const cashMovementTotals = useMemo(
     () =>
@@ -843,6 +844,17 @@ function saleDateValue(vente: Vente) {
   return withCreatedAt.created_at ?? withCreatedAt.createdAt ?? null
 }
 
+function saleNumber(vente: Vente) {
+  return vente.numero_vente || formatSaleNumberFromDate(vente.date_vente) || String(vente.id)
+}
+
+function formatSaleNumberFromDate(value?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`
+}
+
 function buildStockMovements({
   sales,
   transfers,
@@ -885,7 +897,7 @@ function buildStockMovements({
         produit: produit?.nom ?? `Produit #${detail.produit_id}`,
         quantite: Number(detail.quantite) || 0,
         valeur: (Number(detail.quantite) || 0) * (Number(detail.prix_unitaire) || 0),
-        detail: `Ticket #${vente.id} - ${vente.client}`,
+        detail: `Vente #${saleNumber(vente)} - ${vente.client}`,
       })
     }
   }
@@ -915,10 +927,12 @@ function buildGeneralCashMovements({
   entries,
   transfers,
   productsById,
+  salesById,
 }: {
   entries: AccountingEntry[]
   transfers: Transfert[]
   productsById: Map<number, Produit>
+  salesById: Map<number, Vente>
 }) {
   const rows: CashMovementRow[] = entries.map((entry) => {
     const amount = Number(entry.amount) || 0
@@ -927,7 +941,7 @@ function buildGeneralCashMovements({
       date: entry.created_at,
       operation: accountingOperationLabel(entry),
       canal: entry.account === 'CAISSE' ? 'Caisse' : entry.account === 'COFFRE' ? 'Coffre' : String(entry.account),
-      motif: entry.motif || '-',
+      motif: accountingMotif(entry, salesById),
       debit: amount > 0 ? amount : 0,
       credit: amount < 0 ? Math.abs(amount) : 0,
       source: 'COMPTA',
@@ -968,6 +982,23 @@ function buildGeneralCashMovements({
     const bTime = b.date ? new Date(b.date).getTime() : 0
     return bTime - aTime
   })
+}
+
+function accountingMotif(entry: AccountingEntry, salesById: Map<number, Vente>) {
+  const rawMotif = entry.motif || '-'
+  if (String(entry.reference_type ?? '').toLowerCase() !== 'vente' || !entry.reference_id) {
+    return rawMotif
+  }
+
+  const vente = salesById.get(Number(entry.reference_id))
+  if (!vente) return rawMotif
+
+  const nextSaleLabel = `vente #${saleNumber(vente)}`
+  if (entry.entry_type === 'SALE') {
+    return `Vente #${saleNumber(vente)} - ${vente.client}`
+  }
+
+  return rawMotif.replace(/vente\s+#?\d+/i, nextSaleLabel)
 }
 
 function accountingOperationLabel(entry: AccountingEntry) {

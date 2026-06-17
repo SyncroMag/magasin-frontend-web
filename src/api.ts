@@ -158,14 +158,14 @@ export const api = {
   },
 
   updateVente(token: string, id: number, vente: VenteCreate) {
-    return request<{ message: string }>(`/ventes/${id}`, token, {
+    return request<{ message?: string; detail?: string }>(`/ventes/${id}`, token, {
       method: 'PUT',
       body: JSON.stringify(vente),
     })
   },
 
   deleteVente(token: string, id: number) {
-    return request<{ message: string }>(`/ventes/${id}`, token, {
+    return request<{ message?: string; detail?: string }>(`/ventes/${id}`, token, {
       method: 'DELETE',
     })
   },

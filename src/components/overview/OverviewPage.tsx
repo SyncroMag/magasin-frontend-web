@@ -203,7 +203,7 @@ export function OverviewPage({
                 <table className="dashboard-history-table">
                   <thead>
                     <tr>
-                      <th>Ticket</th>
+                      <th>N vente</th>
                       <th>Client</th>
                       <th>Marchandises</th>
                       <th>Date</th>
@@ -222,7 +222,7 @@ export function OverviewPage({
                             className={`clickable-row${isExpanded ? ' selected-row' : ''}`}
                             onClick={() => setExpandedSaleId(isExpanded ? null : vente.id)}
                           >
-                            <td data-label="Ticket">#{vente.id}</td>
+                            <td data-label="N vente">{saleNumber(vente)}</td>
                             <td data-label="Client">{vente.client}</td>
                             <td data-label="Marchandises">{saleProductsLabel(vente, produits)}</td>
                             <td data-label="Date">{dateLabel(vente.date_vente)}</td>
@@ -375,6 +375,17 @@ function matchesSaleDateRange(vente: Vente, dateStart: string, dateEnd: string) 
   if (end && saleDate > end) return false
 
   return true
+}
+
+function saleNumber(vente: Vente) {
+  return vente.numero_vente || formatSaleNumberFromDate(vente.date_vente) || String(vente.id)
+}
+
+function formatSaleNumberFromDate(value?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 function calculateSaleReduction(vente: Vente) {
