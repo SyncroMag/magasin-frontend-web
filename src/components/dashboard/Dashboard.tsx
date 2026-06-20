@@ -774,6 +774,29 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
     }
   }
 
+  async function handleUpdateAccountingEntry(
+    entryId: number,
+    data: { account: AccountingAccount; amount: number; motif: string },
+  ) {
+    try {
+      await api.updateAccountingEntry(session.accessToken, entryId, data)
+      showSuccess('Mouvement modifie.')
+      await refreshAccounting()
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Modification mouvement impossible')
+    }
+  }
+
+  async function handleDeleteAccountingEntry(entryId: number) {
+    try {
+      await api.deleteAccountingEntry(session.accessToken, entryId)
+      showSuccess('Mouvement supprime.')
+      await refreshAccounting()
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Suppression mouvement impossible')
+    }
+  }
+
   function renderView() {
     if (
       activeView === 'stock' ||
@@ -883,6 +906,8 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
           onTransfer={handleTransferAccounting}
           onExpense={handleCreateExpense}
           onSalaryPayment={handleCreateSalaryPayment}
+          onUpdateEntry={handleUpdateAccountingEntry}
+          onDeleteEntry={handleDeleteAccountingEntry}
         />
       )
     }

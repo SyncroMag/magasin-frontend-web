@@ -1588,6 +1588,13 @@ td span {
   width: 100%;
 }
 
+.accounting-edit-form {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8faf9;
+}
+
 .check-row {
   display: flex;
   grid-template-columns: auto 1fr;

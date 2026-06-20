@@ -437,6 +437,19 @@ export const api = {
     })
   },
 
+  updateAccountingEntry(token: string, id: number, data: { account: AccountingAccount; amount: number; motif: string }) {
+    return request<AccountingEntry>(`/comptabilite/entries/${id}`, token, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+
+  deleteAccountingEntry(token: string, id: number) {
+    return request<{ message: string }>(`/comptabilite/entries/${id}`, token, {
+      method: 'DELETE',
+    })
+  },
+
   createSalaryPayment(
     token: string,
     data: { account: AccountingAccount; employe_id: number; amount: number; motif?: string | null },

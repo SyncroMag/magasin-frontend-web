@@ -1,11 +1,11 @@
-import { ArrowRightLeft, Check, ChevronDown, ChevronUp, Plus, Printer, ReceiptText } from 'lucide-react'
+import { ArrowRightLeft, Check, ChevronDown, ChevronUp, Pencil, Plus, Printer, ReceiptText, Save, Trash2, X } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { api } from '../../api'
 import { STORE_NAME } from '../../constants'
 import { FormattedNumberInput } from '../common/FormattedNumberInput'
 import { PaginationControls, usePaginatedItems } from '../common/PaginationControls'
 import { dateLabel, money } from '../../utils/format'
-import { notifyError } from '../../utils/notifications'
+import { confirmAction, notifyError } from '../../utils/notifications'
 import type { FormEvent, ReactNode } from 'react'
 import type {
   AccountingAccount,
@@ -34,6 +34,8 @@ type AccountingPageProps = {
   onTransfer: (data: { from_account: AccountingAccount; to_account: AccountingAccount; amount: number; motif: string }) => Promise<void>
   onExpense: (data: { account: AccountingAccount; amount: number; motif: string }) => Promise<void>
   onSalaryPayment: (data: { account: AccountingAccount; employe_id: number; amount: number; motif?: string | null }) => Promise<void>
+  onUpdateEntry: (entryId: number, data: { account: AccountingAccount; amount: number; motif: string }) => Promise<void>
+  onDeleteEntry: (entryId: number) => Promise<void>
 }
 
 const accountBySection: Record<'cash' | 'vault', AccountingAccount> = {
@@ -78,6 +80,8 @@ export function AccountingPage({
   onTransfer,
   onExpense,
   onSalaryPayment,
+  onUpdateEntry,
+  onDeleteEntry,
 }: AccountingPageProps) {
   const [manualForm, setManualForm] = useState({ amount: 0, motif: '' })
   const [transferForm, setTransferForm] = useState({
@@ -341,6 +345,8 @@ export function AccountingPage({
           title="Depenses et salaires"
           printable
           printTitle="Depenses et salaires"
+          onUpdateEntry={onUpdateEntry}
+          onDeleteEntry={onDeleteEntry}
         />
       </section>
     )
@@ -528,7 +534,7 @@ export function AccountingPage({
           </form>
         </article>
       </section>
-      <EntriesTable entries={visibleEntries} />
+      <EntriesTable entries={visibleEntries} onUpdateEntry={onUpdateEntry} onDeleteEntry={onDeleteEntry} />
     </section>
   )
 }
@@ -560,14 +566,61 @@ function EntriesTable({
   footer = null,
   printable = false,
   printTitle = 'Mouvements',
+  onUpdateEntry,
+  onDeleteEntry,
 }: {
   entries: AccountingEntry[]
   title?: string
   footer?: ReactNode
   printable?: boolean
   printTitle?: string
+  onUpdateEntry?: (entryId: number, data: { account: AccountingAccount; amount: number; motif: string }) => Promise<void>
+  onDeleteEntry?: (entryId: number) => Promise<void>
 }) {
   const { pageItems, controls } = usePaginatedItems(entries)
+  const [editingEntry, setEditingEntry] = useState<{
+    id: number
+    account: AccountingAccount
+    amount: number
+    motif: string
+  } | null>(null)
+
+  function openEditEntry(entry: AccountingEntry) {
+    setEditingEntry({
+      id: entry.id,
+      account: entry.account === 'COFFRE' ? 'COFFRE' : 'CAISSE',
+      amount: Math.abs(Number(entry.amount) || 0),
+      motif: entry.motif,
+    })
+  }
+
+  async function submitEditEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editingEntry || !onUpdateEntry) return
+
+    await onUpdateEntry(editingEntry.id, {
+      account: editingEntry.account,
+      amount: Number(editingEntry.amount),
+      motif: editingEntry.motif,
+    })
+    setEditingEntry(null)
+  }
+
+  async function deleteEntry(entry: AccountingEntry) {
+    if (!onDeleteEntry) return
+    const confirmed = await confirmAction(
+      'Supprimer ce mouvement ?',
+      'Le solde caisse/coffre sera recalcule apres suppression.',
+    )
+    if (!confirmed) return
+
+    await onDeleteEntry(entry.id)
+    if (editingEntry?.id === entry.id) {
+      setEditingEntry(null)
+    }
+  }
+
+  const hasActions = Boolean(onUpdateEntry || onDeleteEntry)
 
   return (
     <article className="panel view-stack">
@@ -583,6 +636,48 @@ function EntriesTable({
           </button>
         )}
       </div>
+      {editingEntry && (
+        <form className="modal-form accounting-edit-form" onSubmit={submitEditEntry}>
+          <div className="two-cols">
+            <label>
+              Compte
+              <select
+                value={editingEntry.account}
+                onChange={(event) => setEditingEntry({ ...editingEntry, account: event.target.value as AccountingAccount })}
+              >
+                <option value="CAISSE">Caisse</option>
+                <option value="COFFRE">Coffre</option>
+              </select>
+            </label>
+            <label>
+              Montant
+              <FormattedNumberInput
+                value={editingEntry.amount}
+                min={0}
+                onValueChange={(amount) => setEditingEntry({ ...editingEntry, amount })}
+              />
+            </label>
+          </div>
+          <label>
+            Motif
+            <input
+              value={editingEntry.motif}
+              onChange={(event) => setEditingEntry({ ...editingEntry, motif: event.target.value })}
+              required
+            />
+          </label>
+          <div className="icon-actions">
+            <button className="primary-button compact-button" type="submit">
+              <Save size={16} aria-hidden="true" />
+              Enregistrer
+            </button>
+            <button className="ghost-button compact-button" type="button" onClick={() => setEditingEntry(null)}>
+              <X size={16} aria-hidden="true" />
+              Annuler
+            </button>
+          </div>
+        </form>
+      )}
       <div className="table-wrap">
         <table>
           <thead>
@@ -592,25 +687,51 @@ function EntriesTable({
               <th>Type</th>
               <th>Motif</th>
               <th>Montant</th>
+              {hasActions && <th>Action</th>}
             </tr>
           </thead>
           <tbody>
-            {pageItems.map((entry) => (
-              <tr key={entry.id}>
-                <td data-label="Date">{dateLabel(entry.created_at)}</td>
-                <td data-label="Compte">{entry.account === 'CAISSE' ? 'Caisse' : 'Coffre'}</td>
-                <td data-label="Type">{entryTypeLabel(entry.entry_type)}</td>
-                <td data-label="Motif">{entry.motif}</td>
-                <td data-label="Montant">
-                  <strong className={Number(entry.amount) < 0 ? 'amount-negative' : 'amount-positive'}>
-                    {money(entry.amount)}
-                  </strong>
-                </td>
-              </tr>
-            ))}
+            {pageItems.map((entry) => {
+              const canEditEntry = isEditableAccountingEntry(entry)
+
+              return (
+                <tr key={entry.id}>
+                  <td data-label="Date">{dateLabel(entry.created_at)}</td>
+                  <td data-label="Compte">{entry.account === 'CAISSE' ? 'Caisse' : 'Coffre'}</td>
+                  <td data-label="Type">{entryTypeLabel(entry.entry_type)}</td>
+                  <td data-label="Motif">{entry.motif}</td>
+                  <td data-label="Montant">
+                    <strong className={Number(entry.amount) < 0 ? 'amount-negative' : 'amount-positive'}>
+                      {money(entry.amount)}
+                    </strong>
+                  </td>
+                  {hasActions && (
+                    <td data-label="Action">
+                      {canEditEntry ? (
+                        <div className="icon-actions">
+                          <button type="button" className="icon-button" title="Modifier mouvement" onClick={() => openEditEntry(entry)}>
+                            <Pencil size={16} aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-button danger-icon"
+                            title="Supprimer mouvement"
+                            onClick={() => void deleteEntry(entry)}
+                          >
+                            <Trash2 size={16} aria-hidden="true" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="muted-cell">Auto</span>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
             {entries.length === 0 && (
               <tr>
-                <td colSpan={5} className="empty-cell">
+                <td colSpan={hasActions ? 6 : 5} className="empty-cell">
                   Aucun mouvement.
                 </td>
               </tr>
@@ -622,6 +743,10 @@ function EntriesTable({
       <PaginationControls {...controls} />
     </article>
   )
+}
+
+function isEditableAccountingEntry(entry: AccountingEntry) {
+  return ['MANUAL_IN', 'EXPENSE', 'SALARY_PAYMENT'].includes(entry.entry_type)
 }
 
 function CashMovementsTable({ rows }: { rows: CashMovementRow[] }) {
