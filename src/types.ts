@@ -30,6 +30,7 @@ export type Produit = {
 export type ProduitCreate = Omit<Produit, 'id' | 'is_active' | 'updated_at'>
 
 export type VenteDetail = {
+  id?: number
   produit_id: number
   quantite: number
   prix_unitaire_initial?: number
@@ -40,6 +41,31 @@ export type VenteDetail = {
   is_partner_sale?: boolean
   partner_name?: string | null
   partner_purchase_price?: number | null
+  partner_payout_paid?: boolean
+  partner_payout_paid_at?: string | null
+  partner_payout_paid_by?: number | null
+}
+
+export type PartnerPayout = {
+  id: number
+  vente_id: number
+  numero_vente?: string | null
+  date_vente: string
+  client: string
+  produit_id: number
+  produit_nom: string
+  type?: string | null
+  categorie?: string | null
+  partner_name: string
+  quantite: number
+  prix_vente: number
+  montant_vente: number
+  prix_achat_partenaire: number
+  montant_a_retourner: number
+  benefice: number
+  paid: boolean
+  paid_at?: string | null
+  paid_by?: number | null
 }
 
 export type Vente = {

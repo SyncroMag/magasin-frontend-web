@@ -22,6 +22,7 @@ import type {
   OutilMagasinCreate,
   Produit,
   ProduitCreate,
+  PartnerPayout,
   Role,
   TopProduit,
   Transfert,
@@ -167,6 +168,16 @@ export const api = {
   deleteVente(token: string, id: number) {
     return request<{ message?: string; detail?: string }>(`/ventes/${id}`, token, {
       method: 'DELETE',
+    })
+  },
+
+  partnerPayouts(token: string, status: 'pending' | 'paid' | 'all' = 'pending') {
+    return request<PartnerPayout[]>(`/ventes/partner-payouts?status=${status}`, token)
+  },
+
+  markPartnerPayoutPaid(token: string, detailId: number) {
+    return request<PartnerPayout>(`/ventes/partner-payouts/${detailId}/paid`, token, {
+      method: 'PATCH',
     })
   },
 
