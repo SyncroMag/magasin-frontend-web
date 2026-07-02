@@ -335,7 +335,13 @@ export type Benefice = {
 export type TopProduit = {
   id: number
   nom: string
+  type: string
+  categorie: string
   quantite_vendue: number
+}
+
+export type TopProduitBenefice = TopProduit & {
+  benefice_total: number
 }
 
 export type VenteParJour = {

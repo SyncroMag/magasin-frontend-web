@@ -1,37 +1,37 @@
-import { AlertTriangle, BadgeCheck, BarChart3, ChevronDown, ChevronUp } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, BarChart3, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
 import { Fragment, useMemo, useState } from 'react'
 import { TablePaginationFooter, usePaginatedItems } from '../common/PaginationControls'
 import { roleDetails } from '../../constants'
 import { dateLabel, money } from '../../utils/format'
-import type { Benefice, ChiffreAffaires, Produit, Session, TopProduit, Vente, VenteParJour } from '../../types'
+import type { Produit, Session, TopProduit, TopProduitBenefice, Vente, VenteParJour } from '../../types'
 
 type OverviewPageProps = {
   session: Session
-  chiffreAffaires: ChiffreAffaires | null
-  benefice: Benefice | null
   lowStockProducts: Produit[]
   produits: Produit[]
   ventes: Vente[]
   topProduits: TopProduit[]
+  topProduitsBenefice: TopProduitBenefice[]
   ventesParJour: VenteParJour[]
 }
 
 export function OverviewPage({
   session,
-  chiffreAffaires,
-  benefice,
   lowStockProducts,
   produits,
   ventes,
   topProduits,
+  topProduitsBenefice,
   ventesParJour,
 }: OverviewPageProps) {
+  const [revenueDateStart, setRevenueDateStart] = useState(() => currentMonthRange().start)
+  const [revenueDateEnd, setRevenueDateEnd] = useState(() => currentMonthRange().end)
+  const [showRevenueDates, setShowRevenueDates] = useState(false)
   const [dateStart, setDateStart] = useState('')
   const [dateEnd, setDateEnd] = useState('')
   const [expandedSaleId, setExpandedSaleId] = useState<number | null>(null)
   const [showHistory, setShowHistory] = useState(true)
   const [showSalesChart, setShowSalesChart] = useState(true)
-  const [showTopChart, setShowTopChart] = useState(true)
 
   const filteredVentes = useMemo(
     () => ventes.filter((vente) => matchesSaleDateRange(vente, dateStart, dateEnd)),
@@ -39,11 +39,24 @@ export function OverviewPage({
   )
   const { pageItems: paginatedVentes, controls: ventePagination } = usePaginatedItems(filteredVentes)
 
-  const netSales = Number(chiffreAffaires?.chiffre_affaires ?? 0)
-  const totalProfit = Number(benefice?.benefice_total ?? 0)
-  const totalReduction = useMemo(() => ventes.reduce((total, vente) => total + calculateSaleReduction(vente), 0), [ventes])
+  const revenueVentes = useMemo(
+    () => ventes.filter((vente) => matchesSaleDateRange(vente, revenueDateStart, revenueDateEnd)),
+    [revenueDateEnd, revenueDateStart, ventes],
+  )
+  const netSales = useMemo(
+    () => revenueVentes.reduce((total, vente) => total + Number(vente.total || 0), 0),
+    [revenueVentes],
+  )
+  const totalProfit = useMemo(
+    () => revenueVentes.reduce((total, vente) => total + calculateSaleProfit(vente), 0),
+    [revenueVentes],
+  )
+  const totalReduction = useMemo(
+    () => revenueVentes.reduce((total, vente) => total + calculateSaleReduction(vente), 0),
+    [revenueVentes],
+  )
   const grossSales = netSales + totalReduction
-  const averageTicket = ventes.length > 0 ? netSales / ventes.length : 0
+  const averageTicket = revenueVentes.length > 0 ? netSales / revenueVentes.length : 0
   const profitRate = netSales > 0 ? (totalProfit / netSales) * 100 : 0
   const canViewFinancialStats = session.role !== 'VENDEUR'
 
@@ -62,22 +75,57 @@ export function OverviewPage({
           <article className="metric-card accent-cyan">
             <span>Chiffre d affaire brut</span>
             <strong>{money(grossSales)}</strong>
-            <small>Avant reductions</small>
+            <small>Avant reductions sur la periode</small>
           </article>
-          <article className="metric-card">
-            <span>Chiffre d affaire net</span>
+          <article className="metric-card revenue-metric-card" style={{paddingTop:'0px'}}>
+            <div className="metric-card-heading">
+              <span>Chiffre d affaire net</span>
+              <button
+                className={`metric-calendar-button${showRevenueDates ? ' active' : ''}`}
+                type="button"
+                onClick={() => setShowRevenueDates((current) => !current)}
+                aria-label={showRevenueDates ? 'Masquer la periode' : 'Afficher la periode'}
+                title={showRevenueDates ? 'Masquer la periode' : 'Choisir la periode'}
+              >
+                <CalendarDays size={16} aria-hidden="true" />
+              </button>
+            </div>
             <strong>{money(netSales)}</strong>
-            <small>{chiffreAffaires?.nombre_ventes ?? 0} ventes</small>
+            <small>{revenueVentes.length} ventes sur la periode</small>
+            {showRevenueDates && (
+              <div className="metric-date-range">
+                <label>
+                  Du
+                  <input
+                    type="date"
+                    value={revenueDateStart}
+                    max={revenueDateEnd || undefined}
+                    onChange={(event) => setRevenueDateStart(event.target.value)}
+                    aria-label="Date de debut du chiffre d'affaire net"
+                  />
+                </label>
+                <label>
+                  Au
+                  <input
+                    type="date"
+                    value={revenueDateEnd}
+                    min={revenueDateStart || undefined}
+                    onChange={(event) => setRevenueDateEnd(event.target.value)}
+                    aria-label="Date de fin du chiffre d'affaire net"
+                  />
+                </label>
+              </div>
+            )}
           </article>
           <article className="metric-card accent-green">
             <span>Benefice total</span>
             <strong>{money(totalProfit)}</strong>
-            <small>{profitRate.toFixed(1)}% du net</small>
+            <small>{profitRate.toFixed(1)}% du net sur la periode</small>
           </article>
           <article className="metric-card accent-gold">
             <span>Ticket moyen</span>
             <strong>{money(averageTicket)}</strong>
-            <small>Montant moyen par vente</small>
+            <small>Montant moyen sur la periode</small>
           </article>
         </section>
       )}
@@ -109,7 +157,7 @@ export function OverviewPage({
           <div className="panel-header">
             <div>
               <p className="eyebrow">Analyse</p>
-              <h2>Top produits</h2>
+              <h2>Produits les plus vendus</h2>
             </div>
             <BarChart3 size={20} aria-hidden="true" />
           </div>
@@ -118,7 +166,8 @@ export function OverviewPage({
               <div className="stack-item" key={produit.id}>
                 <div>
                   <strong>{produit.nom}</strong>
-                  <span>Quantite vendue</span>
+                  <span>{topProductMeta(produit, produits)}</span>
+                  <small>Quantite vendue</small>
                 </div>
                 <b>{produit.quantite_vendue}</b>
               </div>
@@ -151,27 +200,30 @@ export function OverviewPage({
           </article>
         )}
 
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Graphique</p>
-              <h2>Repartition top produits</h2>
+        {canViewFinancialStats && (
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Rentabilite</p>
+                <h2>Top produits par benefice</h2>
+              </div>
+              <BarChart3 size={20} aria-hidden="true" />
             </div>
-            <button className="ghost-button compact-button" type="button" onClick={() => setShowTopChart((current) => !current)}>
-              {showTopChart ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
-              {showTopChart ? 'Hide' : 'Show'}
-            </button>
-          </div>
-          {showTopChart ? (
-            topProduits.length > 0 ? (
-              <TopProductsChart data={topProduits.slice(0, 6)} />
-            ) : (
-              <p className="muted">Pas encore de top produits.</p>
-            )
-          ) : (
-            <p className="muted">Graphique masque.</p>
-          )}
-        </article>
+            <div className="stack-list">
+              {topProduitsBenefice.slice(0, 5).map((produit) => (
+                <div className="stack-item" key={produit.id}>
+                  <div>
+                    <strong>{produit.nom}</strong>
+                    <span>{topProductMeta(produit, produits)}</span>
+                    <span>{produit.quantite_vendue} unites vendues</span>
+                  </div>
+                  <b>{money(produit.benefice_total)}</b>
+                </div>
+              ))}
+              {topProduitsBenefice.length === 0 && <p className="muted">Pas encore de benefice consolide.</p>}
+            </div>
+          </article>
+        )}
 
         <article className="panel wide">
           <div className="panel-header">
@@ -300,14 +352,22 @@ export function OverviewPage({
 }
 
 function SalesTrendChart({ data }: { data: VenteParJour[] }) {
-  const width = 520
-  const height = 220
-  const padding = 20
+  const width = 640
+  const height = 280
+  const plotLeft = 72
+  const plotRight = width - 20
+  const plotTop = 20
+  const plotBottom = height - 52
   const maxValue = Math.max(...data.map((item) => Number(item.total || 0)), 1)
-  const stepX = data.length > 1 ? (width - padding * 2) / (data.length - 1) : 0
+  const stepX = data.length > 1 ? (plotRight - plotLeft) / (data.length - 1) : 0
+  const yTicks = Array.from({ length: 5 }, (_, index) => (maxValue / 4) * index)
+  const xTickStep = Math.max(1, Math.ceil((data.length - 1) / 5))
+  const xTickIndexes = data
+    .map((_, index) => index)
+    .filter((index) => index % xTickStep === 0 || index === data.length - 1)
   const points = data.map((item, index) => {
-    const x = padding + stepX * index
-    const y = height - padding - ((Number(item.total || 0) / maxValue) * (height - padding * 2))
+    const x = plotLeft + stepX * index
+    const y = plotBottom - ((Number(item.total || 0) / maxValue) * (plotBottom - plotTop))
     return `${x},${y}`
   })
 
@@ -320,17 +380,51 @@ function SalesTrendChart({ data }: { data: VenteParJour[] }) {
             <stop offset="100%" stopColor="#147963" stopOpacity="0.04" />
           </linearGradient>
         </defs>
-        <polyline
+        {yTicks.map((tick) => {
+          const y = plotBottom - ((tick / maxValue) * (plotBottom - plotTop))
+          return (
+            <g key={tick}>
+              <line className="chart-grid-line" x1={plotLeft} y1={y} x2={plotRight} y2={y} />
+              <text className="chart-axis-tick" x={plotLeft - 10} y={y + 4} textAnchor="end">
+                {formatAxisAmount(tick)}
+              </text>
+            </g>
+          )
+        })}
+        <line className="chart-axis-line" x1={plotLeft} y1={plotTop} x2={plotLeft} y2={plotBottom} />
+        <line className="chart-axis-line" x1={plotLeft} y1={plotBottom} x2={plotRight} y2={plotBottom} />
+        <polygon
           fill="url(#salesArea)"
           stroke="none"
-          points={`${padding},${height - padding} ${points.join(' ')} ${width - padding},${height - padding}`}
+          points={`${plotLeft},${plotBottom} ${points.join(' ')} ${plotRight},${plotBottom}`}
         />
         <polyline fill="none" stroke="#147963" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" points={points.join(' ')} />
         {data.map((item, index) => {
-          const x = padding + stepX * index
-          const y = height - padding - ((Number(item.total || 0) / maxValue) * (height - padding * 2))
+          const x = plotLeft + stepX * index
+          const y = plotBottom - ((Number(item.total || 0) / maxValue) * (plotBottom - plotTop))
           return <circle key={item.date} cx={x} cy={y} r="4" fill="#e25b47" />
         })}
+        {xTickIndexes.map((index) => {
+          const x = plotLeft + stepX * index
+          return (
+            <g key={data[index].date}>
+              <line className="chart-axis-line" x1={x} y1={plotBottom} x2={x} y2={plotBottom + 5} />
+              <text className="chart-axis-tick" x={x} y={plotBottom + 19} textAnchor="middle">
+                {shortAxisDate(data[index].date)}
+              </text>
+            </g>
+          )
+        })}
+        <text className="chart-axis-title" x={(plotLeft + plotRight) / 2} y={height - 8} textAnchor="middle">Date</text>
+        <text
+          className="chart-axis-title"
+          x={14}
+          y={(plotTop + plotBottom) / 2}
+          textAnchor="middle"
+          transform={`rotate(-90 14 ${(plotTop + plotBottom) / 2})`}
+        >
+          Montant (Ar)
+        </text>
       </svg>
       <div className="chart-legend">
         {data.slice(-6).map((item) => (
@@ -340,26 +434,6 @@ function SalesTrendChart({ data }: { data: VenteParJour[] }) {
           </div>
         ))}
       </div>
-    </div>
-  )
-}
-
-function TopProductsChart({ data }: { data: TopProduit[] }) {
-  const maxValue = Math.max(...data.map((item) => item.quantite_vendue), 1)
-
-  return (
-    <div className="bar-chart-list">
-      {data.map((item) => (
-        <div className="bar-chart-row" key={item.id}>
-          <div className="bar-chart-head">
-            <strong>{item.nom}</strong>
-            <span>{item.quantite_vendue}</span>
-          </div>
-          <div className="bar-chart-track">
-            <div className="bar-chart-fill" style={{ width: `${(item.quantite_vendue / maxValue) * 100}%` }} />
-          </div>
-        </div>
-      ))}
     </div>
   )
 }
@@ -375,6 +449,25 @@ function matchesSaleDateRange(vente: Vente, dateStart: string, dateEnd: string) 
   if (end && saleDate > end) return false
 
   return true
+}
+
+function currentMonthRange() {
+  const today = new Date()
+  const year = today.getFullYear()
+  const month = today.getMonth()
+
+  return {
+    start: localDateValue(new Date(year, month, 1)),
+    end: localDateValue(new Date(year, month + 1, 0)),
+  }
+}
+
+function localDateValue(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-')
 }
 
 function saleNumber(vente: Vente) {
@@ -402,6 +495,28 @@ function calculateSaleReduction(vente: Vente) {
   )
 }
 
+function calculateSaleProfit(vente: Vente) {
+  return (vente.details ?? []).reduce(
+    (total, detail) =>
+      total +
+      (Number(detail.prix_unitaire) - Number(detail.prix_achat ?? 0)) * detail.quantite -
+      Number(detail.reduction_panier ?? 0),
+    0,
+  )
+}
+
+function formatAxisAmount(value: number) {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}k`
+  return Math.round(value).toString()
+}
+
+function shortAxisDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
 function saleProductsLabel(vente: Vente, produits: Produit[]) {
   const details = vente.details ?? []
   if (details.length === 0) return '-'
@@ -412,4 +527,12 @@ function saleProductsLabel(vente: Vente, produits: Produit[]) {
   })
 
   return details.length > 2 ? `${labels.join(', ')} +${details.length - 2}` : labels.join(', ')
+}
+
+function topProductMeta(produit: TopProduit, produits: Produit[]) {
+  const productDetails = produits.find((item) => item.id === produit.id)
+  const type = produit.type || productDetails?.type
+  const categorie = produit.categorie || productDetails?.categorie
+
+  return [type, categorie].filter(Boolean).join(' / ') || 'Type et categorie non renseignes'
 }

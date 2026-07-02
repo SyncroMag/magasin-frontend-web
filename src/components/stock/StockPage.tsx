@@ -12,6 +12,7 @@ import type { ReactNode } from 'react'
 import type { Arrivage, EtatProduit, EtatProduitStatus, Produit, ProduitCreate } from '../../types'
 
 type StockSection = 'types' | 'categories' | 'stock' | 'arrivals' | 'states'
+type StockStatusFilter = 'all' | 'alert' | 'out'
 
 type StockPageProps = {
   section: StockSection
@@ -103,6 +104,7 @@ export function StockPage({
   const [arrivalEditor, setArrivalEditor] = useState<ArrivalEditor | null>(null)
   const [isSubmittingArrival, setSubmittingArrival] = useState(false)
   const [inactiveProducts, setInactiveProducts] = useState<Produit[]>([])
+  const [stockStatusFilter, setStockStatusFilter] = useState<StockStatusFilter>('all')
   const [stateForm, setStateForm] = useState({
     produit_id: '',
     quantite: 1,
@@ -291,7 +293,22 @@ export function StockPage({
   const { pageItems: paginatedCategoryRows, controls: categoryPagination } = usePaginatedItems(categoryRows)
   const { pageItems: paginatedArrivalHistory, controls: arrivalPagination } = usePaginatedItems(filteredArrivalHistory)
   const { pageItems: paginatedEtatsProduits, controls: statePagination } = usePaginatedItems(filteredEtatsProduits)
-  const { pageItems: paginatedFilteredProducts, controls: productPagination } = usePaginatedItems(filteredProducts)
+  const stockStatusCounts = useMemo(
+    () => ({
+      alert: produits.filter((produit) => produit.quantite > 0 && produit.quantite <= produit.seuil_alerte).length,
+      out: produits.filter((produit) => produit.quantite <= 0).length,
+    }),
+    [produits],
+  )
+  const statusFilteredProducts = useMemo(
+    () => filteredProducts.filter((produit) => {
+      if (stockStatusFilter === 'alert') return produit.quantite > 0 && produit.quantite <= produit.seuil_alerte
+      if (stockStatusFilter === 'out') return produit.quantite <= 0
+      return true
+    }),
+    [filteredProducts, stockStatusFilter],
+  )
+  const { pageItems: paginatedFilteredProducts, controls: productPagination } = usePaginatedItems(statusFilteredProducts)
   const { pageItems: paginatedInactiveProducts, controls: inactiveProductPagination } = usePaginatedItems(inactiveProducts)
 
   useEffect(() => {
@@ -1148,12 +1165,47 @@ export function StockPage({
   }
 
   return (
+    <>
     <article className="panel view-stack">
       <DataHeader
         eyebrow="Article"
         title="Stock"
         action={canManageStock ? <AddButton onClick={() => setProductModalOpen(true)} /> : null}
       />
+      <div className="stock-summary-grid">
+        <button
+          className={`stock-summary-card${stockStatusFilter === 'all' ? ' active' : ''}`}
+          type="button"
+          onClick={() => setStockStatusFilter('all')}
+        >
+          <span>Articles en stock</span>
+          <strong>{produits.length}</strong>
+          <small>Afficher tous</small>
+        </button>
+        <div className="stock-summary-card inactive">
+          <span>Produits inactifs</span>
+          <strong>{inactiveProducts.length}</strong>
+          <small>Liste separee ci-dessous</small>
+        </div>
+        <button
+          className={`stock-summary-card alert${stockStatusFilter === 'alert' ? ' active' : ''}`}
+          type="button"
+          onClick={() => setStockStatusFilter((current) => current === 'alert' ? 'all' : 'alert')}
+        >
+          <span>Produits en alerte</span>
+          <strong>{stockStatusCounts.alert}</strong>
+          <small>Cliquer pour filtrer</small>
+        </button>
+        <button
+          className={`stock-summary-card danger${stockStatusFilter === 'out' ? ' active' : ''}`}
+          type="button"
+          onClick={() => setStockStatusFilter((current) => current === 'out' ? 'all' : 'out')}
+        >
+          <span>Rupture de stock</span>
+          <strong>{stockStatusCounts.out}</strong>
+          <small>Cliquer pour filtrer</small>
+        </button>
+      </div>
       <div className="toolbar-grid">
         <label>
           Recherche
@@ -1239,8 +1291,8 @@ export function StockPage({
                   )}
                 </td>
                 <td data-label="Etat">
-                  <span className={produit.quantite <= produit.seuil_alerte ? 'pill alert' : 'pill ok'}>
-                    {produit.quantite <= produit.seuil_alerte ? 'Alerte' : 'OK'}
+                  <span className={produit.quantite <= 0 ? 'pill danger' : produit.quantite <= produit.seuil_alerte ? 'pill alert' : 'pill ok'}>
+                    {produit.quantite <= 0 ? 'Rupture' : produit.quantite <= produit.seuil_alerte ? 'Alerte' : 'OK'}
                   </span>
                 </td>
                 {showStockActions && (
@@ -1258,14 +1310,15 @@ export function StockPage({
                 )}
               </tr>
             ))}
-            {filteredProducts.length === 0 && <EmptyRow colSpan={7 + (showStockFinancialColumns ? 2 : 0) + (showStockActions ? 1 : 0)} />}
+            {statusFilteredProducts.length === 0 && <EmptyRow colSpan={7 + (showStockFinancialColumns ? 2 : 0) + (showStockActions ? 1 : 0)} />}
           </tbody>
         </table>
       </div>
       <PaginationControls {...productPagination} />
+    </article>
 
       {canManageStock && (
-        <article className="panel view-stack">
+        <article className="panel view-stack stock-inactive-panel">
           <div className="panel-header">
             <div>
               <p className="eyebrow">Stock</p>
@@ -1326,7 +1379,7 @@ export function StockPage({
 
       {renderProductModal()}
       {renderEditProductModal()}
-    </article>
+    </>
   )
 
   function renderProductModal() {

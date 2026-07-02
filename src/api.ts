@@ -25,6 +25,7 @@ import type {
   PartnerPayout,
   Role,
   TopProduit,
+  TopProduitBenefice,
   Transfert,
   TransfertCreate,
   User,
@@ -324,6 +325,10 @@ export const api = {
 
   topProduits(token: string) {
     return request<TopProduit[]>('/stats/top-produits', token)
+  },
+
+  topProduitsBenefice(token: string) {
+    return request<TopProduitBenefice[]>('/stats/top-produits-benefice', token)
   },
 
   ventesParJour(token: string) {

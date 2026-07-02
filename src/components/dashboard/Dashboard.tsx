@@ -27,8 +27,6 @@ import type {
   Approval,
   AdminNotification,
   AbsenceType,
-  Benefice,
-  ChiffreAffaires,
   Employe,
   EmployeCreate,
   OutilMagasin,
@@ -38,6 +36,7 @@ import type {
   Role,
   Session,
   TopProduit,
+  TopProduitBenefice,
   Transfert,
   User,
   UserUpdate,
@@ -103,9 +102,8 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
   const [accountingEntries, setAccountingEntries] = useState<AccountingEntry[]>([])
   const [outils, setOutils] = useState<OutilMagasin[]>([])
   const [employes, setEmployes] = useState<Employe[]>([])
-  const [chiffreAffaires, setChiffreAffaires] = useState<ChiffreAffaires | null>(null)
-  const [benefice, setBenefice] = useState<Benefice | null>(null)
   const [topProduits, setTopProduits] = useState<TopProduit[]>([])
+  const [topProduitsBenefice, setTopProduitsBenefice] = useState<TopProduitBenefice[]>([])
   const [ventesParJour, setVentesParJour] = useState<VenteParJour[]>([])
   const [query, setQuery] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -168,9 +166,8 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
       const [
         productsResult,
         salesResult,
-        revenueResult,
-        benefitResult,
         topProductsResult,
+        topProfitProductsResult,
         dailySalesResult,
         transfersResult,
         approvalsResult,
@@ -184,9 +181,8 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
       ] = await Promise.allSettled([
         api.produits(token),
         api.ventes(token),
-        canViewFinancialStats ? api.chiffreAffaires(token) : Promise.resolve(null),
-        canViewFinancialStats ? api.benefice(token) : Promise.resolve(null),
         api.topProduits(token),
+        canViewFinancialStats ? api.topProduitsBenefice(token) : Promise.resolve([]),
         canViewFinancialStats ? api.ventesParJour(token) : Promise.resolve([]),
         canAccessTransfers ? api.transferts(token) : Promise.resolve([]),
         canReviewApprovals
@@ -203,9 +199,8 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
 
       if (productsResult.status === 'fulfilled') setProduits(productsResult.value)
       if (salesResult.status === 'fulfilled') setVentes(salesResult.value)
-      if (revenueResult.status === 'fulfilled') setChiffreAffaires(revenueResult.value)
-      if (benefitResult.status === 'fulfilled') setBenefice(benefitResult.value)
       if (topProductsResult.status === 'fulfilled') setTopProduits(topProductsResult.value)
+      if (topProfitProductsResult.status === 'fulfilled') setTopProduitsBenefice(topProfitProductsResult.value)
       if (dailySalesResult.status === 'fulfilled') setVentesParJour(dailySalesResult.value)
       if (transfersResult.status === 'fulfilled') setTransferts(transfersResult.value)
       if (approvalsResult.status === 'fulfilled') setApprovals(approvalsResult.value)
@@ -223,9 +218,8 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
       const rejected = [
         productsResult,
         salesResult,
-        revenueResult,
-        benefitResult,
         topProductsResult,
+        topProfitProductsResult,
         dailySalesResult,
         transfersResult,
         approvalsResult,
@@ -987,12 +981,11 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
     return (
       <OverviewPage
         session={session}
-        chiffreAffaires={chiffreAffaires}
-        benefice={benefice}
         lowStockProducts={lowStockProducts}
         produits={produits}
         ventes={ventes}
         topProduits={topProduits}
+        topProduitsBenefice={topProduitsBenefice}
         ventesParJour={ventesParJour}
       />
     )

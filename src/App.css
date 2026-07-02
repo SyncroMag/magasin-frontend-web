@@ -558,6 +558,7 @@ button:disabled {
 
 .overview-metric-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: start;
 }
 
 .metric-card {
@@ -615,6 +616,126 @@ button:disabled {
   color: var(--text-strong);
   font-size: 28px;
   line-height: 1.1;
+}
+
+.metric-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.metric-calendar-button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.metric-calendar-button:hover,
+.metric-calendar-button.active {
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(20, 121, 99, 0.08);
+}
+
+.metric-date-range {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.metric-date-range label {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.metric-date-range input {
+  width: 100%;
+  min-width: 0;
+  margin-top: 4px;
+  padding: 7px 6px;
+  font-size: 12px;
+}
+
+.stock-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stock-summary-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--green);
+  border-radius: 8px;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface);
+}
+
+button.stock-summary-card {
+  cursor: pointer;
+}
+
+.stock-summary-card:hover,
+.stock-summary-card.active {
+  border-color: var(--green);
+  box-shadow: var(--soft-shadow);
+}
+
+.stock-summary-card.alert {
+  border-top-color: var(--gold);
+}
+
+.stock-summary-card.danger {
+  border-top-color: var(--coral);
+}
+
+.stock-summary-card.inactive {
+  border-top-color: var(--muted);
+}
+
+.stock-summary-card span,
+.stock-summary-card small,
+.stock-summary-card strong {
+  display: block;
+}
+
+.stock-summary-card span,
+.stock-summary-card small {
+  color: var(--muted);
+}
+
+.stock-summary-card strong {
+  margin: 6px 0;
+  color: var(--text-strong);
+  font-size: 24px;
+}
+
+.stock-inactive-panel {
+  margin-top: 18px;
+}
+
+@media (max-width: 900px) {
+  .stock-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .stock-summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .content-grid {
@@ -1440,6 +1561,27 @@ td span {
   background:
     linear-gradient(180deg, rgba(20, 121, 99, 0.04), transparent 42%),
     #fbfcfa;
+}
+
+.chart-grid-line {
+  stroke: rgba(83, 105, 99, 0.16);
+  stroke-width: 1;
+}
+
+.chart-axis-line {
+  stroke: #879892;
+  stroke-width: 1;
+}
+
+.chart-axis-tick {
+  fill: #667872;
+  font-size: 10px;
+}
+
+.chart-axis-title {
+  fill: #3c504a;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .chart-legend {
