@@ -39,6 +39,7 @@ export type DashboardView =
   | 'accounting-vault'
   | 'accounting-expenses'
   | 'accounting-inventory'
+  | 'inventory'
   | 'admin-notifications'
   | 'admin-tools'
   | 'admin-personnel'
@@ -260,9 +261,15 @@ export function Sidebar({
             </button>
             <button className={navClass('accounting-inventory')} type="button" onClick={() => chooseView('accounting-inventory')}>
               <ClipboardCheck size={16} aria-hidden="true" />
-              Inventaire
+              Bilan de Caisse
             </button>
           </div>
+        )}
+        {canManageUsers && (
+          <button className={navClass('inventory')} type="button" onClick={() => chooseView('inventory')}>
+            <ClipboardCheck size={18} aria-hidden="true" />
+            Inventaire
+          </button>
         )}
         {(canReviewApprovals || canManageUsers) && (
           <>

@@ -24,6 +24,7 @@ import type {
   ProduitCreate,
   PartnerPayout,
   Role,
+  StockInventory,
   TopProduit,
   TopProduitBenefice,
   Transfert,
@@ -115,6 +116,35 @@ export const api = {
 
   produits(token?: string) {
     return request<Produit[]>('/produits/', token)
+  },
+
+  stockInventory(token: string, month: string) {
+    return request<StockInventory>(`/stock-inventory/${encodeURIComponent(month)}`, token)
+  },
+
+  saveStockInventory(token: string, month: string, items: Array<{ product_id: number; actual_quantity: number | null }>) {
+    return request<StockInventory>(`/stock-inventory/${encodeURIComponent(month)}`, token, {
+      method: 'PUT',
+      body: JSON.stringify({ items }),
+    })
+  },
+
+  completeStockInventory(token: string, month: string, items: Array<{ product_id: number; actual_quantity: number | null }>) {
+    return request<StockInventory>(`/stock-inventory/${encodeURIComponent(month)}/complete`, token, {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    })
+  },
+
+  updateStockInventoryComment(token: string, itemId: number, comment: string) {
+    return request<StockInventory>(`/stock-inventory/items/${itemId}/comment`, token, {
+      method: 'PATCH',
+      body: JSON.stringify({ comment }),
+    })
+  },
+
+  payStockInventoryDifference(token: string, itemId: number) {
+    return request<StockInventory>(`/stock-inventory/items/${itemId}/pay`, token, { method: 'POST' })
   },
 
   produitsInactifs(token: string) {

@@ -29,6 +29,37 @@ export type Produit = {
 
 export type ProduitCreate = Omit<Produit, 'id' | 'is_active' | 'updated_at'>
 
+export type StockInventoryItem = {
+  id: number
+  product_id: number
+  product_type: string
+  product_category: string
+  product_name: string
+  app_quantity: number
+  actual_quantity: number | null
+  difference: number | null
+  purchase_price: number
+  return_amount: number | null
+  regularization_comment?: string | null
+  regularization_paid_at?: string | null
+  regularization_paid_by?: number | null
+  accounting_entry_id?: number | null
+}
+
+export type StockInventory = {
+  id: number
+  month: string
+  status: 'DRAFT' | 'COMPLETED'
+  created_at: string
+  updated_at?: string | null
+  completed_at?: string | null
+  total_products: number
+  counted_products: number
+  total_difference: number
+  total_return_amount: number
+  items: StockInventoryItem[]
+}
+
 export type VenteDetail = {
   id?: number
   produit_id: number

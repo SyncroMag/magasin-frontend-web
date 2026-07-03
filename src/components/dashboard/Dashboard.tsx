@@ -12,6 +12,7 @@ import { PersonnelPage } from '../admin/PersonnelPage'
 import { ApprovalsPage } from '../approvals/ApprovalsPage'
 import type { ApprovalFilter } from '../approvals/ApprovalsPage'
 import { InvoiceUploadsPage } from '../invoices/InvoiceUploadsPage'
+import { InventoryPage } from '../inventory/InventoryPage'
 import { Sidebar } from '../layout/Sidebar'
 import { OverviewPage } from '../overview/OverviewPage'
 import { PartnersPage } from '../partners/PartnersPage'
@@ -64,7 +65,8 @@ const viewTitles: Record<DashboardView, { eyebrow: string; title: string }> = {
   'accounting-cash': { eyebrow: 'Comptabilite', title: 'Caisse' },
   'accounting-vault': { eyebrow: 'Comptabilite', title: 'Coffre' },
   'accounting-expenses': { eyebrow: 'Comptabilite', title: 'Depense' },
-  'accounting-inventory': { eyebrow: 'Comptabilite', title: 'Inventaire' },
+  'accounting-inventory': { eyebrow: 'Comptabilite', title: 'Bilan de Caisse' },
+  inventory: { eyebrow: 'Stock', title: 'Inventaire' },
   'admin-notifications': { eyebrow: 'Espace admin', title: 'Notifications' },
   'admin-tools': { eyebrow: 'Espace admin', title: 'Outils magasin' },
   'admin-personnel': { eyebrow: 'Espace admin', title: 'Personnel' },
@@ -311,6 +313,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
       ((activeView === 'approvals' || activeView === 'admin-notifications') && !canReviewApprovals) ||
       ((activeView === 'admin-tools' || activeView === 'admin-personnel') && !canManageUsers) ||
       (activeView.startsWith('accounting') && !canManageUsers) ||
+      (activeView === 'inventory' && !canManageUsers) ||
       (activeView === 'partners' && !canManageUsers) ||
       (activeView === 'invoice-uploads' && !canManageUsers) ||
       (activeView === 'users' && !canManageUsers)
@@ -329,6 +332,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
     if (view === 'admin-notifications' && !canReviewApprovals) return
     if ((view === 'admin-tools' || view === 'admin-personnel') && !canManageUsers) return
     if (view.startsWith('accounting') && !canManageUsers) return
+    if (view === 'inventory' && !canManageUsers) return
     if (view === 'partners' && !canManageUsers) return
     if (view === 'invoice-uploads' && !canManageUsers) return
     if (view === 'users' && !canManageUsers) return
@@ -875,6 +879,10 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
 
     if (activeView === 'invoice-uploads' && canManageUsers) {
       return <InvoiceUploadsPage token={session.accessToken} />
+    }
+
+    if (activeView === 'inventory' && canManageUsers) {
+      return <InventoryPage token={session.accessToken} onCompleted={loadDashboard} />
     }
 
     if (activeView.startsWith('accounting') && canManageUsers) {

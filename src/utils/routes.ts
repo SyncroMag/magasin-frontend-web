@@ -18,6 +18,7 @@ const routes: Record<DashboardView, string> = {
   'accounting-vault': '/gestion/comptabilite/coffre',
   'accounting-expenses': '/gestion/comptabilite/depenses',
   'accounting-inventory': '/gestion/comptabilite/inventaire',
+  inventory: '/gestion/inventaire',
   'admin-notifications': '/gestion/notifications',
   'admin-tools': '/gestion/outils',
   'admin-personnel': '/gestion/personnel',
@@ -47,6 +48,7 @@ export function viewFromPath(pathname: string): DashboardView {
   if (normalized === '/gestion/comptabilite/coffre') return 'accounting-vault'
   if (normalized === '/gestion/comptabilite/depenses') return 'accounting-expenses'
   if (normalized === '/gestion/comptabilite/inventaire') return 'accounting-inventory'
+  if (normalized === '/gestion/inventaire') return 'inventory'
   if (normalized === '/gestion/notifications') return 'admin-notifications'
   if (normalized === '/gestion/outils') return 'admin-tools'
   if (normalized === '/gestion/personnel') return 'admin-personnel'

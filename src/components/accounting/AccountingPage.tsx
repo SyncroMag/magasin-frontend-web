@@ -359,7 +359,7 @@ export function AccountingPage({
           <div className="panel-header">
             <div>
               <p className="eyebrow">Comptabilite</p>
-              <h2>Inventaire mensuel</h2>
+              <h2>Bilan de Caisse mensuel</h2>
             </div>
             <button
               className="ghost-button compact-button"
@@ -428,7 +428,7 @@ export function AccountingPage({
         <article className="panel view-stack">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Inventaire stock</p>
+              <p className="eyebrow">Etat du stock</p>
               <h2>Produits actifs et valorisation</h2>
             </div>
           </div>
@@ -444,7 +444,7 @@ export function AccountingPage({
         <article className="panel view-stack">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Inventaire stock</p>
+              <p className="eyebrow">Etat du stock</p>
               <h2>Liste des arrivages</h2>
             </div>
           </div>
@@ -1158,6 +1158,7 @@ function entryTypeLabel(value: string) {
     TRANSFER_PAYMENT: 'Paiement transfert',
     TRANSFER_PAYMENT_ADJUSTMENT: 'Ajustement paiement transfert',
     TRANSFER_PAYMENT_CANCEL: 'Annulation paiement transfert',
+    INVENTORY_REGULARIZATION: 'Regularisation inventaire',
   }
 
   return labels[value] ?? value
@@ -1184,13 +1185,13 @@ function printInventoryGeneralReport({
   arrivals: Arrivage[]
   arrivalsTotals: { lines: number; quantity: number; purchase: number; sale: number }
 }) {
-  const popup = window.open('', 'inventaire-general', 'width=1200,height=820')
+  const popup = window.open('', 'bilan-caisse', 'width=1200,height=820')
   if (!popup) return
 
   popup.document.write(`
     <html>
       <head>
-        <title>Inventaire general ${escapeHtml(month)}</title>
+        <title>Bilan de Caisse ${escapeHtml(month)}</title>
         <style>
           body { font-family: Arial, sans-serif; margin: 24px; color: #111; }
           h1 { margin: 0 0 4px; font-size: 22px; }
@@ -1209,7 +1210,7 @@ function printInventoryGeneralReport({
       </head>
       <body>
         <h1>${escapeHtml(STORE_NAME)}</h1>
-        <div class="subtitle">Inventaire general - Mois ${escapeHtml(month)}</div>
+        <div class="subtitle">Bilan de Caisse - Mois ${escapeHtml(month)}</div>
         <div class="summary">
           <div class="box"><span>Caisse avant mois</span><strong>${money(inventory?.opening.caisse ?? 0)}</strong></div>
           <div class="box"><span>Coffre avant mois</span><strong>${money(inventory?.opening.coffre ?? 0)}</strong></div>
