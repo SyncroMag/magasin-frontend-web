@@ -499,8 +499,7 @@ function calculateSaleProfit(vente: Vente) {
   return (vente.details ?? []).reduce(
     (total, detail) =>
       total +
-      (Number(detail.prix_unitaire) - Number(detail.prix_achat ?? 0)) * detail.quantite -
-      Number(detail.reduction_panier ?? 0),
+      (Number(detail.prix_unitaire) - Number(detail.prix_achat ?? 0)) * detail.quantite,
     0,
   )
 }
