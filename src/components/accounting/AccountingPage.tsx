@@ -1486,7 +1486,7 @@ function printSalaryPaymentReceipt({
             </div>
             <div class="box">
               <span>CIN</span>
-              <strong>${escapeHtml(employe.cin)}</strong>
+              <strong>${escapeHtml(employe.cin ?? '')}</strong>
             </div>
             <div class="box">
               <span>Compte de paiement</span>

@@ -34,13 +34,13 @@ export function OverviewPage({
   const [showSalesChart, setShowSalesChart] = useState(true)
 
   const filteredVentes = useMemo(
-    () => ventes.filter((vente) => matchesSaleDateRange(vente, dateStart, dateEnd)),
+    () => ventes.map(withoutPartnerLines).filter((vente) => (vente.details?.length ?? 0) > 0 && matchesSaleDateRange(vente, dateStart, dateEnd)),
     [dateEnd, dateStart, ventes],
   )
   const { pageItems: paginatedVentes, controls: ventePagination } = usePaginatedItems(filteredVentes)
 
   const revenueVentes = useMemo(
-    () => ventes.filter((vente) => matchesSaleDateRange(vente, revenueDateStart, revenueDateEnd)),
+    () => ventes.map(withoutPartnerLines).filter((vente) => (vente.details?.length ?? 0) > 0 && matchesSaleDateRange(vente, revenueDateStart, revenueDateEnd)),
     [revenueDateEnd, revenueDateStart, ventes],
   )
   const netSales = useMemo(
@@ -310,7 +310,6 @@ export function OverviewPage({
                                         <article className="sale-detail-card" key={`${vente.id}-${detail.produit_id}-${index}`}>
                                           <strong>{produit?.nom ?? `Produit #${detail.produit_id}`}</strong>
                                           {produit && <span>{produit.type} / {produit.categorie}</span>}
-                                          {detail.partner_name && <span>Partenaire: {detail.partner_name}</span>}
                                           <div className="sale-detail-metrics">
                                             <span>Quantite: {detail.quantite}</span>
                                             <span>Prix initial: {money(detail.prix_unitaire_initial ?? detail.prix_unitaire)}</span>
@@ -502,6 +501,15 @@ function calculateSaleProfit(vente: Vente) {
       (Number(detail.prix_unitaire) - Number(detail.prix_achat ?? 0)) * detail.quantite,
     0,
   )
+}
+
+function withoutPartnerLines(vente: Vente): Vente {
+  const details = (vente.details ?? []).filter((detail) => !detail.is_partner_sale && !detail.partner_name)
+  return {
+    ...vente,
+    details,
+    total: details.reduce((total, detail) => total + Number(detail.prix_unitaire) * detail.quantite, 0),
+  }
 }
 
 function formatAxisAmount(value: number) {

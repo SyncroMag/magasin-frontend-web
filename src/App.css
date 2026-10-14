@@ -738,8 +738,17 @@ button.stock-summary-card {
 }
 
 .inventory-metrics {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 0;
+}
+
+.inventory-total-row th {
+  background: var(--surface-soft);
+  font-weight: 750;
+}
+
+.inventory-total-row th:last-child span {
+  display: block;
 }
 
 .inventory-table {

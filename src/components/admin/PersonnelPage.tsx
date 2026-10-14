@@ -76,7 +76,7 @@ export function PersonnelPage({
       [
         employe.nom,
         employe.prenoms,
-        employe.cin,
+        employe.cin ?? '',
         employe.lot ?? '',
         ...dateSearchValues(employe.date_embauche),
         ...dateSearchValues(employe.date_cin),
@@ -102,7 +102,7 @@ export function PersonnelPage({
     setForm({
       nom: employe.nom,
       prenoms: employe.prenoms,
-      cin: employe.cin,
+      cin: employe.cin ?? '',
       date_cin: employe.date_cin ?? '',
       lot: employe.lot ?? '',
       date_naissance: employe.date_naissance ?? '',
@@ -488,7 +488,7 @@ function EmployeFields({
       <div className="two-cols">
         <label>
           CIN
-          <input value={form.cin} onChange={(event) => onChange({ ...form, cin: event.target.value })} required />
+          <input value={form.cin ?? ''} onChange={(event) => onChange({ ...form, cin: event.target.value })} />
         </label>
         <label>
           Date CIN
@@ -559,6 +559,7 @@ function Modal({
 function cleanEmployePayload(form: EmployeCreate) {
   return {
     ...form,
+    cin: form.cin || null,
     date_cin: form.date_cin || null,
     lot: form.lot || null,
     date_naissance: form.date_naissance || null,

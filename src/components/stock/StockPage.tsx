@@ -242,11 +242,10 @@ export function StockPage({
         arrivage.commentaire ?? '',
         ...dateSearchValues(arrivage.date_arrivage),
         ...dateSearchValues(arrivage.created_at),
-        ...arrivage.lignes.flatMap((line) => [
+        ...arrivage.lignes.filter((line) => !line.is_partner).flatMap((line) => [
           line.nom,
           line.type,
           line.categorie,
-          line.partner_name ?? '',
           String(line.quantite_ajoutee),
           String(line.stock_avant),
           String(line.stock_apres),
@@ -256,9 +255,17 @@ export function StockPage({
       ].some((field) => field.toLowerCase().includes(value)),
     )
   }, [arrivalHistory, arrivalSearch])
+  const stockArrivalHistory = useMemo(
+    () => filteredArrivalHistory.map((arrival) => ({
+      ...arrival,
+      hasPartnerLines: arrival.lignes.some((line) => line.is_partner),
+      lignes: arrival.lignes.filter((line) => !line.is_partner),
+    })).filter((arrival) => arrival.lignes.length > 0),
+    [filteredArrivalHistory],
+  )
   const filteredArrivalValueTotal = useMemo(
     () =>
-      filteredArrivalHistory.reduce(
+      stockArrivalHistory.reduce(
         (total, arrivage) =>
           total +
           arrivage.lignes.reduce(
@@ -267,7 +274,7 @@ export function StockPage({
           ),
         0,
       ),
-    [filteredArrivalHistory],
+    [stockArrivalHistory],
   )
   const productsById = useMemo(() => new Map(produits.map((produit) => [produit.id, produit])), [produits])
   const filteredEtatsProduits = useMemo(() => {
@@ -291,7 +298,7 @@ export function StockPage({
   const selectedStateProduct = productsById.get(Number(stateForm.produit_id))
   const { pageItems: paginatedTypeRows, controls: typePagination } = usePaginatedItems(typeRows)
   const { pageItems: paginatedCategoryRows, controls: categoryPagination } = usePaginatedItems(categoryRows)
-  const { pageItems: paginatedArrivalHistory, controls: arrivalPagination } = usePaginatedItems(filteredArrivalHistory)
+  const { pageItems: paginatedArrivalHistory, controls: arrivalPagination } = usePaginatedItems(stockArrivalHistory)
   const { pageItems: paginatedEtatsProduits, controls: statePagination } = usePaginatedItems(filteredEtatsProduits)
   const stockStatusCounts = useMemo(
     () => ({
@@ -353,7 +360,7 @@ export function StockPage({
   async function loadInactiveProducts() {
     try {
       const result = await api.produitsInactifs(token)
-      setInactiveProducts(result)
+      setInactiveProducts(result.filter((produit) => !produit.is_partner))
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Chargement produits inactifs impossible')
     }
@@ -1095,8 +1102,8 @@ export function StockPage({
                     >
                       <td data-label="Date arrivage">{dateLabel(arrivage.date_arrivage)}</td>
                       <td data-label="Commentaire">{arrivage.commentaire || '-'}</td>
-                      <td data-label="Lignes">{arrivage.total_lignes}</td>
-                      <td className="arrival-qtt-col" data-label="QTT">{arrivage.total_quantite}</td>
+                      <td data-label="Lignes">{arrivage.lignes.length}</td>
+                      <td className="arrival-qtt-col" data-label="QTT">{arrivage.lignes.reduce((total, line) => total + line.quantite_ajoutee, 0)}</td>
                       <td data-label="Valeur">{money(arrivalValue)}</td>
                       <td data-label="Enregistre le">{dateLabel(arrivage.created_at)}</td>
                       <td data-label="Details">
@@ -1104,7 +1111,7 @@ export function StockPage({
                       </td>
                       {canDeleteStock && (
                         <td className="arrival-actions-col" data-label="Actions">
-                          <div className="icon-actions">
+                          {arrivage.hasPartnerLines ? <span className="muted">-</span> : <div className="icon-actions">
                             <button
                               type="button"
                               className="icon-button"
@@ -1127,7 +1134,7 @@ export function StockPage({
                             >
                               <Trash2 size={16} aria-hidden="true" />
                             </button>
-                          </div>
+                          </div>}
                         </td>
                       )}
                     </tr>
@@ -1139,7 +1146,6 @@ export function StockPage({
                               <div className="ticket-line" key={`${arrivage.id}-${line.nom}-${index}`}>
                                 <span>
                                   {line.nom} ({line.type} / {line.categorie}) x {line.quantite_ajoutee}
-                                  {line.is_partner ? ` - partenaire ${line.partner_name || ''}` : ''}
                                   {` - stock ${line.stock_avant} -> ${line.stock_apres}`}
                                 </span>
                                 <strong>
@@ -1154,7 +1160,7 @@ export function StockPage({
                   </Fragment>
                 )
               })}
-              {filteredArrivalHistory.length === 0 && <EmptyRow colSpan={canDeleteStock ? 8 : 7} />}
+              {stockArrivalHistory.length === 0 && <EmptyRow colSpan={canDeleteStock ? 8 : 7} />}
             </tbody>
           </table>
         </div>
@@ -1265,7 +1271,6 @@ export function StockPage({
               {showStockFinancialColumns && <th>Cout (Ar)</th>}
               <th>Prix vente (Ar)</th>
               {showStockFinancialColumns && <th>Marge</th>}
-              <th>Partenaire</th>
               <th>Etat</th>
               {showStockActions && <th>Actions</th>}
             </tr>
@@ -1283,13 +1288,6 @@ export function StockPage({
                 {showStockFinancialColumns && <td data-label="Cout">{money(produit.cout_achat)}</td>}
                 <td data-label="Prix vente">{money(produit.prix_vente)}</td>
                 {showStockFinancialColumns && <td data-label="Marge">{profitLabel(produit.cout_achat, produit.prix_vente)}</td>}
-                <td data-label="Partenaire">
-                  {produit.is_partner ? (
-                    <span className="pill info">{produit.partner_name || 'Partenaire'}</span>
-                  ) : (
-                    '-'
-                  )}
-                </td>
                 <td data-label="Etat">
                   <span className={produit.quantite <= 0 ? 'pill danger' : produit.quantite <= produit.seuil_alerte ? 'pill alert' : 'pill ok'}>
                     {produit.quantite <= 0 ? 'Rupture' : produit.quantite <= produit.seuil_alerte ? 'Alerte' : 'OK'}
@@ -1310,7 +1308,7 @@ export function StockPage({
                 )}
               </tr>
             ))}
-            {statusFilteredProducts.length === 0 && <EmptyRow colSpan={7 + (showStockFinancialColumns ? 2 : 0) + (showStockActions ? 1 : 0)} />}
+            {statusFilteredProducts.length === 0 && <EmptyRow colSpan={6 + (showStockFinancialColumns ? 2 : 0) + (showStockActions ? 1 : 0)} />}
           </tbody>
         </table>
       </div>
@@ -1332,7 +1330,6 @@ export function StockPage({
                   <th>Produit</th>
                   <th>Type</th>
                   <th>Categorie</th>
-                  <th>Partenaire</th>
                   <th>Etat</th>
                   <th>Actions</th>
                 </tr>
@@ -1346,13 +1343,6 @@ export function StockPage({
                     </td>
                     <td data-label="Type">{produit.type}</td>
                     <td data-label="Categorie">{produit.categorie}</td>
-                    <td data-label="Partenaire">
-                      {produit.is_partner ? (
-                        <span className="pill info">{produit.partner_name || 'Partenaire'}</span>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
                     <td data-label="Etat">
                       <span className="pill danger">Desactive</span>
                     </td>
@@ -1369,7 +1359,7 @@ export function StockPage({
                     </td>
                   </tr>
                 ))}
-                {inactiveProducts.length === 0 && <EmptyRow colSpan={6} />}
+                {inactiveProducts.length === 0 && <EmptyRow colSpan={5} />}
               </tbody>
             </table>
           </div>

@@ -129,9 +129,10 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
   const canAccessTransfers = session.role === 'VENDEUR' || session.role === 'ADMIN' || session.role === 'SUPER_ADMIN'
 
   const lowStockProducts = useMemo(
-    () => produits.filter((produit) => produit.quantite <= produit.seuil_alerte),
+    () => produits.filter((produit) => !produit.is_partner && produit.quantite <= produit.seuil_alerte),
     [produits],
   )
+  const regularProducts = useMemo(() => produits.filter((produit) => !produit.is_partner), [produits])
   const unreadNotificationCount = useMemo(
     () => adminNotifications.filter((notification) => !notification.is_read).length,
     [adminNotifications],
@@ -142,6 +143,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
     const value = query.trim().toLowerCase()
 
     return produits
+      .filter((produit) => !produit.is_partner)
       .filter((produit) =>
         (!stockTypeFilter || produit.type === stockTypeFilter) &&
         (!stockCategoryFilter || produit.categorie === stockCategoryFilter) &&
@@ -150,14 +152,12 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
             produit.nom,
             produit.type,
             produit.categorie,
-            produit.partner_name ?? '',
             ...dateSearchValues(produit.created_at),
             ...dateSearchValues(produit.updated_at),
           ].some((field) =>
             field.toLowerCase().includes(value),
           )),
       )
-      .sort((a, b) => Number(a.is_partner) - Number(b.is_partner))
   }, [produits, query, stockCategoryFilter, stockTypeFilter])
 
   async function loadDashboard() {
@@ -816,7 +816,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
                   ? 'states'
                   : 'stock'
           }
-          produits={produits}
+          produits={regularProducts}
           filteredProducts={filteredProducts}
           query={query}
           canManageStock={canManageStock}
@@ -990,7 +990,7 @@ export function Dashboard({ session, onLogout }: DashboardProps) {
       <OverviewPage
         session={session}
         lowStockProducts={lowStockProducts}
-        produits={produits}
+        produits={regularProducts}
         ventes={ventes}
         topProduits={topProduits}
         topProduitsBenefice={topProduitsBenefice}

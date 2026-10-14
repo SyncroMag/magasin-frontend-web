@@ -328,7 +328,7 @@ export type Employe = {
   id: number
   nom: string
   prenoms: string
-  cin: string
+  cin: string | null
   date_cin?: string | null
   lot?: string | null
   date_naissance?: string | null
@@ -346,7 +346,7 @@ export type Employe = {
 export type EmployeCreate = {
   nom: string
   prenoms: string
-  cin: string
+  cin: string | null
   date_cin?: string | null
   lot?: string | null
   date_naissance?: string | null

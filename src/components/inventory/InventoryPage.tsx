@@ -147,10 +147,12 @@ export function InventoryPage({ token, onCompleted }: InventoryPageProps) {
       </section>
 
       <section className="metric-grid inventory-metrics">
-        <InventoryMetric label="Produits" value={inventory?.total_products ?? 0} />
-        <InventoryMetric label="Comptes" value={inventory?.counted_products ?? 0} />
-        <InventoryMetric label="Difference" value={liveTotals(items, actualValues).difference} />
-        <InventoryMetric label="Prix a retourner" value={money(liveTotals(items, actualValues).returnAmount)} />
+        <InventoryMetric label="References produit" value={items.length} />
+        <InventoryMetric label="Nombre total produit" value={liveTotals(items, actualValues).appQuantity} />
+        <InventoryMetric label="Nombre total reel" value={liveTotals(items, actualValues).actualQuantity} />
+        <InventoryMetric label="Nombre total difference" value={liveTotals(items, actualValues).difference} />
+        <InventoryMetric label="Prix total produits" value={money(liveTotals(items, actualValues).productValue)} />
+        <InventoryMetric label="Prix total manquant" value={money(liveTotals(items, actualValues).returnAmount)} />
       </section>
 
       <section className="panel view-stack inventory-table-panel">
@@ -190,6 +192,20 @@ export function InventoryPage({ token, onCompleted }: InventoryPageProps) {
               })}
               {!isLoading && items.length === 0 && <tr><td className="empty-cell" colSpan={7}>Aucun produit actif.</td></tr>}
             </tbody>
+            {items.length > 0 && (
+              <tfoot>
+                <tr className="inventory-total-row">
+                  <th colSpan={3}>Total ({items.length} references)</th>
+                  <th>{liveTotals(items, actualValues).appQuantity}</th>
+                  <th>{liveTotals(items, actualValues).actualQuantity}</th>
+                  <th>{liveTotals(items, actualValues).difference}</th>
+                  <th>
+                    <span>Stock: {money(liveTotals(items, actualValues).productValue)}</span>
+                    <span>Manquant: {money(liveTotals(items, actualValues).returnAmount)}</span>
+                  </th>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
         <PaginationControls {...controls} />
@@ -340,25 +356,29 @@ function parseActualQuantity(value?: string) {
 
 function liveTotals(items: StockInventory['items'], values: Record<number, string>) {
   return items.reduce((totals, item) => {
+    totals.appQuantity += item.app_quantity
+    totals.productValue += item.app_quantity * item.purchase_price
     const actual = parseActualQuantity(values[item.product_id])
     if (actual === null) return totals
+    totals.actualQuantity += actual
     const difference = item.app_quantity - actual
     totals.difference += difference
     totals.returnAmount += Math.max(difference, 0) * item.purchase_price
     return totals
-  }, { difference: 0, returnAmount: 0 })
+  }, { appQuantity: 0, actualQuantity: 0, difference: 0, productValue: 0, returnAmount: 0 })
 }
 
 function printInventory(inventory: StockInventory, values: Record<number, string>) {
   const popup = window.open('', 'stock-inventory-print', 'width=1200,height=820')
   if (!popup) return
+  const totals = liveTotals(inventory.items, values)
   const rows = inventory.items.map((item) => {
     const actual = parseActualQuantity(values[item.product_id])
     const difference = actual === null ? null : item.app_quantity - actual
     const returnAmount = difference === null ? null : Math.max(difference, 0) * item.purchase_price
     return `<tr><td>${escapeHtml(item.product_type)}</td><td>${escapeHtml(item.product_category)}</td><td>${escapeHtml(item.product_name)}</td><td>${item.app_quantity}</td><td>${actual ?? '-'}</td><td>${difference ?? '-'}</td><td>${returnAmount === null ? '-' : money(returnAmount)}</td></tr>`
   }).join('')
-  popup.document.write(`<!doctype html><html><head><title>Inventaire ${inventory.month}</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#1d2926}h1{margin:0 0 4px}p{margin:0 0 20px;color:#60706b}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ccd5d1;padding:8px;text-align:left}th{background:#eef3f1}</style></head><body><h1>Inventaire</h1><p>Mois ${escapeHtml(inventory.month)} - ${inventory.status === 'COMPLETED' ? 'Termine' : 'Brouillon'}</p><table><thead><tr><th>Type</th><th>Categorie</th><th>Produit</th><th>Stock application</th><th>Stock reel</th><th>Difference</th><th>Prix a retourner</th></tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`)
+  popup.document.write(`<!doctype html><html><head><title>Inventaire ${inventory.month}</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#1d2926}h1{margin:0 0 4px}p{margin:0 0 20px;color:#60706b}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ccd5d1;padding:8px;text-align:left}th{background:#eef3f1}tfoot th{font-weight:700}tfoot span{display:block}</style></head><body><h1>Inventaire</h1><p>Mois ${escapeHtml(inventory.month)} - ${inventory.status === 'COMPLETED' ? 'Termine' : 'Brouillon'}</p><table><thead><tr><th>Type</th><th>Categorie</th><th>Produit</th><th>Stock application</th><th>Stock reel</th><th>Difference</th><th>Prix a retourner</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><th colspan="3">Total (${inventory.items.length} references)</th><th>${totals.appQuantity}</th><th>${totals.actualQuantity}</th><th>${totals.difference}</th><th><span>Stock: ${money(totals.productValue)}</span><span>Manquant: ${money(totals.returnAmount)}</span></th></tr></tfoot></table><script>window.onload=()=>window.print()</script></body></html>`)
   popup.document.close()
 }
 

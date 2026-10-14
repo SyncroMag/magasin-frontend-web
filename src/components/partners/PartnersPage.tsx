@@ -91,6 +91,15 @@ export function PartnersPage({ produits, token, canManage, canDelete, onRefresh 
   )
   const pendingTotals = useMemo(() => payoutTotals(filteredPendingPayouts), [filteredPendingPayouts])
   const ledgerTotals = useMemo(() => payoutTotals(filteredLedgerPayouts), [filteredLedgerPayouts])
+  const stockTotals = useMemo(
+    () => partnerProducts.reduce((totals, product) => {
+      totals.quantity += Number(product.quantite) || 0
+      totals.cost += (Number(product.quantite) || 0) * (Number(product.cout_achat) || 0)
+      totals.sales += (Number(product.quantite) || 0) * (Number(product.prix_vente) || 0)
+      return totals
+    }, { quantity: 0, cost: 0, sales: 0 }),
+    [partnerProducts],
+  )
   const { pageItems: paginatedPendingPayouts, controls: pendingPayoutPagination } = usePaginatedItems(filteredPendingPayouts)
   const { pageItems: paginatedLedgerPayouts, controls: ledgerPayoutPagination } = usePaginatedItems(filteredLedgerPayouts)
   const matchingProduct = partnerProducts.find(
@@ -213,6 +222,13 @@ export function PartnersPage({ produits, token, canManage, canDelete, onRefresh 
 
   return (
     <section className="view-stack">
+      <section className="metric-grid">
+        <PartnerMetric label="Articles partenaire" value={partnerProducts.length} />
+        <PartnerMetric label="Stock total" value={stockTotals.quantity} />
+        <PartnerMetric label="Cout total du stock" value={money(stockTotals.cost)} />
+        <PartnerMetric label="Vente theorique du stock" value={money(stockTotals.sales)} />
+        <PartnerMetric label="Benefice theorique du stock" value={money(stockTotals.sales - stockTotals.cost)} />
+      </section>
       {isFormOpen && (
       <article className="panel view-stack">
         <div className="panel-header">
@@ -510,6 +526,10 @@ export function PartnersPage({ produits, token, canManage, canDelete, onRefresh 
       </article>
     </section>
   )
+}
+
+function PartnerMetric({ label, value }: { label: string; value: string | number }) {
+  return <article className="metric-card"><span>{label}</span><strong>{value}</strong></article>
 }
 
 function PartnerPayoutTable({
