@@ -99,6 +99,8 @@ export function AccountingPage({
   const [inventory, setInventory] = useState<AccountingInventory | null>(null)
   const [arrivages, setArrivages] = useState<Arrivage[]>([])
   const [inventoryLoading, setInventoryLoading] = useState(false)
+  const [currentProducts, setCurrentProducts] = useState<Produit[]>(produits)
+  const [currentStockLoading, setCurrentStockLoading] = useState(false)
   const selectedSalaryEmploye = employes.find((item) => item.id === Number(salaryForm.employe_id))
   const salaryAbsenceDeduction = selectedSalaryEmploye
     ? Math.max(
@@ -117,7 +119,7 @@ export function AccountingPage({
   const productsById = useMemo(() => new Map(produits.map((produit) => [produit.id, produit])), [produits])
   const salesById = useMemo(() => new Map(ventes.map((vente) => [vente.id, vente])), [ventes])
   const inventoryEntries = useMemo(() => inventory?.entries ?? [], [inventory])
-  const activeProducts = useMemo(() => produits.filter((produit) => produit.is_active), [produits])
+  const activeProducts = useMemo(() => currentProducts.filter((produit) => produit.is_active), [currentProducts])
   const monthSales = useMemo(
     () => ventes.filter((vente) => !vente.modified_by_superadmin && isMonthMatch(saleDateValue(vente), inventoryMonth)),
     [inventoryMonth, ventes],
@@ -191,12 +193,23 @@ export function AccountingPage({
   )
 
   useEffect(() => {
+    setCurrentProducts(produits)
+  }, [produits])
+
+  useEffect(() => {
     if (section !== 'inventory') return
 
     void loadInventory(inventoryMonth)
     void loadArrivages()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section, inventoryMonth, token])
+
+  useEffect(() => {
+    if (section !== 'inventory') return
+
+    void loadCurrentProducts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section, token])
 
   async function loadInventory(month: string) {
     setInventoryLoading(true)
@@ -206,6 +219,17 @@ export function AccountingPage({
       notifyError(err instanceof Error ? err.message : 'Inventaire impossible a charger')
     } finally {
       setInventoryLoading(false)
+    }
+  }
+
+  async function loadCurrentProducts() {
+    setCurrentStockLoading(true)
+    try {
+      setCurrentProducts(await api.produits(token))
+    } catch (err) {
+      notifyError(err instanceof Error ? err.message : 'Stock actuel impossible a charger')
+    } finally {
+      setCurrentStockLoading(false)
     }
   }
 
@@ -429,7 +453,7 @@ export function AccountingPage({
           <div className="panel-header">
             <div>
               <p className="eyebrow">Etat du stock</p>
-              <h2>Produits actifs et valorisation</h2>
+              <h2>Stock disponible actuel</h2>
             </div>
           </div>
           <div className="panel-actions">
@@ -437,6 +461,7 @@ export function AccountingPage({
             <span className="pill info">Quantite totale: {activeProductsTotals.quantity}</span>
             <span className="pill ok">Valeur achat: {money(activeProductsTotals.purchase)}</span>
             <span className="pill warn">Valeur vente: {money(activeProductsTotals.sale)}</span>
+            {currentStockLoading && <span className="pill info">Actualisation du stock...</span>}
           </div>
           <ActiveProductsTable rows={activeProducts} />
         </article>
@@ -1254,7 +1279,7 @@ function printInventoryGeneralReport({
           </tbody>
         </table>
 
-        <h2>Produits actifs et valorisation</h2>
+        <h2>Stock disponible actuel</h2>
         <div class="summary">
           <div class="box"><span>Produits actifs</span><strong>${activeProducts.length}</strong></div>
           <div class="box"><span>Quantite totale</span><strong>${activeProductsTotals.quantity}</strong></div>
